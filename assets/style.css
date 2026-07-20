@@ -70,10 +70,14 @@ section.block{padding:56px 0;border-top:1px solid var(--hairline)}
 /* categories */
 .cat-group-label{font-size:12px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:8px 0 14px}
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
-.cat{display:block;padding:22px;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--surface);transition:border-color .12s,background .12s}
+.cat{display:block;padding:22px;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--surface);transition:border-color .12s,background .12s;text-decoration:none;color:inherit}
 .cat:hover{border-color:var(--hairline-strong);background:var(--surface-2)}
 .cat .n{font-size:16px;font-weight:500;color:var(--ink-strong)}
 .cat .c{margin-top:10px;font-size:13px;color:var(--ink-mute);font-family:var(--mono)}
+/* pages_index: category headings (deep-link targets from dashboard cards) */
+.cat-head{scroll-margin-top:24px;display:flex;align-items:baseline;gap:10px;font-size:15px;font-weight:600;color:var(--ink-strong);margin:6px 0 12px}
+.cat-head-c{font-size:12px;font-weight:500;color:var(--ink-mute);font-family:var(--mono)}
+.cat-head:target{color:var(--primary)}
 
 /* lower two-column */
 .cols{display:grid;grid-template-columns:1.4fr 1fr;gap:48px;align-items:start}
