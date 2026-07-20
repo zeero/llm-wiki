@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数時間動き続けるエージェントの構築 — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>数時間動き続けるエージェントの構築</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="数時間動き続けるエージェントの構築">数時間動き続けるエージェントの構築</h1>
+
+<blockquote>
+  <p>5〜6時間以上動き続けるエージェントをどう設計するか。Anthropic の applied AI チーム（Ash Prabaker, Andrew Wilson）による AI Engineer カンファレンスのワークショップ書き起こし。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>長時間動くエージェントが難しい理由は3つ。(1) コンテキスト（有限、context rot による一貫性低下、終盤の “context anxiety”）、(2) 計画（モデルは素の状態では計画が下手で、一発でやろうとしたり半分作って止まる）、(3) 自己出力の判断が苦手（sycophantic で half-baked を「done」と判断、ボタンだけ作って裏側が無い等）。これに対しモデル自体（weights）と harness（scaffold）の両輪で対処し、両者は co-evolve する。最小 scaffold での自律稼働時間は Opus 3.7 の約1時間から Opus 4.6 の約12時間へ伸びた。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="harness-と-primitives-の歴史">harness と primitives の歴史</h3>
+
+<p>Agent SDK（旧 Claude Code SDK）が core agent loop・MCP・subagent・CLAUDE.md/skills/slash commands・permission system といった primitives を提供する。モデルのリリースごとに harness も同時に進化してきた。Sonnet 3.5 で artifact/自己検証、computer use、MCP。Sonnet 3.7 で Claude Code の research preview（当初は「開発者の使い方を学びモデル改善に活かす」実験的位置づけ）。Opus/Sonnet 4 で GA と SDK。Sonnet 4.5 で context 自己管理・checkpoints。Haiku/Opus 4.5 で subagent が経済的になり、Opus で計画・Sonnet で実行という分業、skills（progressive disclosure）、programmatic tool calling。Opus/Sonnet 4.6 で agent teams（sub-agent 同士が通信）、server-side compaction、1M context GA。</p>
+
+<h3 id="ralph-loop">Ralph Loop</h3>
+
+<p>Geoffrey Huntley 由来の手法。prompt を Claude Code CLI にループで食わせ、全タスク完了まで回す。計画で feature 分解 → 1タスクを fresh context で実行、を繰り返す。標語は “deterministically bad in an undeterministic world”（予測可能に失敗するほうが、予測不能に成功するよりよい）。Anthropic 版 Ralph Loop は単一セッション内で compaction に頼り、max iterations と safe word を設定、stop hook が停止を intercept して継続する。</p>
+
+<h3 id="generatorevaluatoradversarialパターン">Generator–Evaluator（adversarial）パターン</h3>
+
+<p>GAN に着想を得た中核パターン。self-evaluation は trap で、代わりに generator（builder）と evaluator（critic）を context window・system prompt・役割ごと分離する。evaluator は diff を読むだけでなく Playwright で実際にページを開いて操作・スクショ・採点し、critique を generator に handoff する。鍵は「standalone critic を harsh にチューニングするのは tractable だが、builder を自己批判的にするのは難しい」点で、LLM の批評能力と生成能力のギャップを突く。</p>
+
+<ul>
+  <li><strong>taste の採点</strong>: design / originality / craft / functionality の4基準の rubric を作り、design と originality を重み付け。purple gradient 等の “AI slop” を防ぐため、reference サイトの few-shot で evaluator の taste を自分たちに収束させる。強い意見があるなら subjective quality も書き下せば採点できる。</li>
+  <li><strong>planner の追加</strong>: 一行 prompt を高レベルの spec（sprint 列）へ分解する。granular な技術詳細まで計画しない（誤りが sprint 全体に cascade するため）。構造は PM / IC / QA に近く、各役割に独立 context を与えただけ。</li>
+  <li><strong>contract</strong>: generator が書く前に、両エージェントが「done の定義」をディスク上のファイルで交渉（scope・テストの強さ・edge case）。合意後に構築し、evaluator は元 spec ではなく合意した contract に対して採点する。Ralph Loop の固定 plan.md と違い、反対側が主張してくる点が革新。例のアプリでは 27 の contract criteria まで granular にした。</li>
+</ul>
+
+<h3 id="実例と教訓">実例と教訓</h3>
+
+<p>「retro game maker を作れ」という prompt で、solo loop は見た目は動くが play mode が機能しない（矢印キーが効かない）状態で「done」に。同じ prompt・モデルを harness で回すと約6時間・$200 で、planner が製品判断（Retro Forge 命名、54色パレット、アプリ内 AI アシスタント）を行い、evaluator が実際にプレイして物理ループ・衝突判定まで通した。evaluator が拾うのは FastAPI の route ordering、delete キーの boolean bug 等、CI を通り抜ける具体的な不具合。</p>
+
+<ul>
+  <li><strong>out-of-the-box の Claude は QA が下手</strong>（generosity bias）。small layout bug や edge case を prompt に反映するチューニングに膨大な時間を要した。</li>
+  <li><strong>主な debug ループは trace を手で読むこと</strong>。実験を増やすより、エージェントが実際に何をしたか、判断がどこで人間と乖離したかを読み、prompt を直す。transcript をファイルに落として別エージェントに grep/play させ prompt を更新する手法も。</li>
+  <li><strong>harness はモデル改善で消えず進化する</strong>。4.6 では context reset を廃し単一セッション+compaction、sprint 分解を簡素化、evaluator の実行頻度を下げた。「4.5 では正しかった harness を、frontier が動いたので簡素化した」。</li>
+  <li><strong>共有状態はファイルシステム</strong>を使う（context window に頼らない）。「試した→評価→bug→修正→効いた」の時系列ログと高レベルの docs を JSON で残し、後から人間や Claude Code が引き継げる breadcrumb にする。</li>
+</ul>
+
+<h3 id="持ち帰り5点">持ち帰り5点</h3>
+
+<p>self-evaluation は trap（adversarial evaluator を使う）／ compaction ≠ coherence（lossy summary は drift する）／ structured hand-off と clean context が良いパターン／ subjective quality も書き下せば採点可能／ モデルと共に座って trace を読む（何を削り何を残すか）。auto mode、custom subagents、Playwright MCP / Claude for Chrome MCP、skills（rubric のパッケージ化）で自前でも組める。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-usage-techniques.html">Claude Code 活用法（Anthropic 開発チーム）</a></li>
+  <li><a href="../pages/claude-code-steering.html">Claude Code の挙動制御（7つの方法）</a></li>
+  <li><a href="../pages/tmux-portal.html">tmux-portal</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/autocoder.html">AutoCoder</a></li>
+          
+            <li><a href="../pages/claude-code-usage-techniques.html">Claude Code 活用法（Anthropic 開発チーム）</a></li>
+          
+            <li><a href="../pages/swe-rl.html">SWE-RL</a></li>
+          
+            <li><a href="../pages/tmux-portal.html">tmux-portal</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>デイトレ売買戦略のスコアリング設計 — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>デイトレ売買戦略のスコアリング設計</h1>
+    <span class="cat-badge">Finance</span>
+    <div class="article"><h1 id="デイトレ売買戦略のスコアリング設計">デイトレ売買戦略のスコアリング設計</h1>
+
+<blockquote>
+  <p>自作デイトレ bot の売買戦略を Claude との対話で把握・改善した記録。スクリーニング → テクニカル計算 → スコアリング → 発注の全体フローと、トレンドゲートが機能不全に陥った原因分析。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Alpaca + n8n で 5 分間隔で動く自作デイトレ bot（Python）。バックテストで有望だった 10 銘柄程度を監視する。売買判定は AND 条件ではなく <strong>スコアリング方式</strong>（複数のテクニカル指標をポイント合算し閾値超えで発火）を採用し、「強い単一シグナル＋補助」でも発火できる。この記録は Claude にコードを読ませて戦略を把握し、トレードが発生しない問題の原因を突き止めた対話ログ。</p>
+
+<h2 id="全体フロー">全体フロー</h2>
+
+<pre><code>5分ごと（n8n）
+  ├─ screening.py           出来高急増 or ギャップ or bypass → 通過/除外
+  ├─ technical_analysis.py  RSI / MACD / EMA / VWAP / ATR / 15mトレンド 計算
+  └─ scoring.py             買い/売りスコア合算 → トレンドゲート適用 → 閾値超えで signal
+       ↓
+     order.py（ATRベース SL/TP → 発注）
+</code></pre>
+
+<h2 id="スクリーニング前段フィルタ">スクリーニング（前段フィルタ）</h2>
+
+<p>テクニカル分析を走らせるコストを節約するため「動いている銘柄か」を弾く第一段階。</p>
+
+<pre><code>候補銘柄 → ① NASDAQ100照合 → ② bypass銘柄は無条件通過
+→ ③ 流動性フィルタ（avg_volume &lt; 1,000,000 を除外）
+→ ④ 価格帯フィルタ（current_price &lt; $5 を除外）
+→ ⑤ 出来高急増 OR ギャップ（いずれか1つ満たせば通過）
+</code></pre>
+
+<p>通過条件（⑤、OR）: 出来高急増（現在出来高 ÷ 平均出来高 ≥ 2.0 倍）／ギャップアップ（(寄り値 − 前日終値) ÷ 前日終値 ≥ +2%）／ギャップダウン（≤ −2%）。<code>bypass</code> <code>volume_surge_ratio</code> <code>gap_threshold</code> <code>min_avg_volume</code> <code>min_price</code> は銘柄別オーバーライド可能。</p>
+
+<h2 id="スコアリング">スコアリング</h2>
+
+<h3 id="買いスコア_calc_buy_score">買いスコア（_calc_buy_score）</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>指標</th>
+      <th>条件</th>
+      <th>スコア</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>RSI</td>
+      <td>&lt; 30</td>
+      <td>+3</td>
+    </tr>
+    <tr>
+      <td>RSI</td>
+      <td>&lt; 35（排他）</td>
+      <td>+2</td>
+    </tr>
+    <tr>
+      <td>MACD</td>
+      <td>ゴールデンクロス</td>
+      <td>+2</td>
+    </tr>
+    <tr>
+      <td>EMA</td>
+      <td>ゴールデンクロス</td>
+      <td>+1</td>
+    </tr>
+    <tr>
+      <td>出来高比</td>
+      <td>&gt; 2.0倍</td>
+      <td>+1</td>
+    </tr>
+    <tr>
+      <td>ギャップ率</td>
+      <td>&gt; 2%</td>
+      <td>+1</td>
+    </tr>
+    <tr>
+      <td>VWAP</td>
+      <td>ゴールデンクロス</td>
+      <td>+2</td>
+    </tr>
+    <tr>
+      <td>VWAP</td>
+      <td>近接 かつ RSI &lt; 45</td>
+      <td>+1</td>
+    </tr>
+    <tr>
+      <td>VWAP</td>
+      <td>上方乖離 &gt; 1.5%（過熱）</td>
+      <td>−1</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="売りスコア_calc_sell_score">売りスコア（_calc_sell_score）</h3>
+
+<p>RSI &gt; 70 で +3、RSI &gt; 65（排他）で +2、MACD デッドクロス +2、EMA デッドクロス +1、出来高比 &gt; 2.0倍 +1、VWAP デッドクロス +2、VWAP 近接かつ RSI &gt; 55 で +1、VWAP 下方乖離 &gt; 1.5%（過熱）で −1。</p>
+
+<h3 id="シグナル決定ロジックdetermine_signal">シグナル決定ロジック（determine_signal）</h3>
+
+<ul>
+  <li>デフォルト閾値: 買い/売りともに 4 点（銘柄別に config 上書き可能）。</li>
+  <li><strong>トレンドゲート</strong>（15分足トレンドで制限）: <code>down</code> → ロング禁止、<code>up</code> → ショート禁止、<code>neutral</code> → 閾値を +1 して慎重判断。</li>
+  <li>優先順位: buy_score ≥ sell_score なら買いを優先。</li>
+  <li>ATR はスコアリング対象外で、後段の SL/TP 計算用にパススルー。</li>
+</ul>
+
+<h2 id="各指標の設計と注意点">各指標の設計と注意点</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>指標</th>
+      <th>パラメータ</th>
+      <th>用途</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>RSI</td>
+      <td>14期間</td>
+      <td>過熱・割安判定</td>
+    </tr>
+    <tr>
+      <td>MACD</td>
+      <td>12/26/9</td>
+      <td>トレンド転換判定</td>
+    </tr>
+    <tr>
+      <td>EMA</td>
+      <td>9/21</td>
+      <td>短期トレンド判定</td>
+    </tr>
+    <tr>
+      <td>VWAP</td>
+      <td>当日累積</td>
+      <td>機関投資家の基準値との乖離</td>
+    </tr>
+    <tr>
+      <td>ATR</td>
+      <td>14期間</td>
+      <td>SL/TP計算用（スコア不使用）</td>
+    </tr>
+    <tr>
+      <td>15分足トレンド</td>
+      <td>EMA9/EMA21差</td>
+      <td>トレンドゲート判定</td>
+    </tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>クロス判定</strong>: 直前バーと現バーの 2 本比較のみ。クロスした瞬間だけ <code>golden</code>/<code>dead</code> が立ち、次の 5 分足では <code>none</code> に戻る。鮮度は高いがクロス直後の 1 本しか拾えず、n8n のスケジュール精度・API ラグで取りこぼすと消える（5分枠で1分ズレると取りこぼし確率 20% 程度）。改善案は lookback（直近 2〜3 本以内のクロスを有効とみなす）。</li>
+  <li><strong>VWAP</strong>: 当日累積のため寄り付き直後はバー数が少なく信頼性が低い。出来高 0 バーは除外。<code>near</code> 判定は ±0.3% 以内（ハードコード）。TSLA のような高ボラ銘柄では狭すぎて VWAP near ボーナスがほぼ死ぬため、<code>per_symbol</code> で <code>near_threshold</code> を調整するのが理想。</li>
+  <li><strong>15分足トレンドゲート</strong>: <code>diff_ratio = abs(EMA9 − EMA21) / EMA21 ≤ neutral_threshold(0.003)</code> なら neutral、EMA9 &gt; EMA21 なら up、EMA9 &lt; EMA21 なら down。</li>
+</ul>
+
+<h2 id="トレンドゲート機能不全の原因分析">トレンドゲート機能不全の原因分析</h2>
+
+<p><code>trend_15m</code> が約 80% の時間帯で <code>neutral</code> に落ち、neutral 時は閾値が +1 されるため 8 割の時間で閾値が実質 5 点になり、トレードが発生しない主因となっていた。原因は 2 つが重なったもの。</p>
+
+<ul>
+  <li><strong>原因①: neutral_threshold が広すぎる（0.3%）</strong>: 15 分足の短期 EMA 同士は元々差が開きにくく、この閾値では大半のバーが neutral に落ちる。</li>
+  <li><strong>原因②: 当日分のバーしか取得していない</strong>: n8n の <code>Fetch 15min Bars</code> ノードが <code>new Date().toISOString().slice(0,10)</code>（当日日付のみ）を <code>start</code> に渡すため最大 26 本しか取れない。EMA は本数が少ないと全バーの平均に引っ張られ、EMA9 と EMA21 が似た値に収束する。寄り付き〜午前中は差がほぼ出ず neutral になる。</li>
+</ul>
+
+<h3 id="対応案">対応案</h3>
+
+<ul>
+  <li><strong>対応A（優先度高・工数小）</strong>: <code>neutral_threshold</code> を 0.003 → 0.001 に下げる。neutral 率 80% → 30〜40% の見込みだが、原因②が残るため寄り付き直後は改善しない。</li>
+  <li><strong>対応B（優先度高・工数中）</strong>: <code>start</code> を前日（<code>-3日</code> で週明けの金曜分もカバー、祝日は Alpaca カレンダー API がより安全）に変更し、EMA が育った状態で寄り付きを迎える。午前中の neutral 率が大幅改善。</li>
+  <li><strong>対応C（優先度低・工数中）</strong>: EMA9/21 は両方短期で差が開きにくいため EMA20/50 に変更。時間軸の開きが大きくなり差が出やすい。ただし 50 本以上必要（約 2 営業日分）なので対応 B とセットで実施し、ガード条件を <code>&lt; 50</code> に変える。</li>
+</ul>
+
+<p>推奨順序は A → B（まず同時適用して数日ログを取り neutral 率が 20〜30% に収まるか確認）→ 安定後に C を検討。</p>
+
+<h2 id="検証が進まないときの案トレードが発生しない場合">検証が進まないときの案（トレードが発生しない場合）</h2>
+
+<p>精度を厳しめにするとトレードが発生せず検証が進まない。案として: A) ペーパートレードモード（閾値を下げてシグナルだけ発火・発注せずログ記録）、B) スコアをログに残しヒストグラム化（閾値 4 に対しスコア 3 止まりの件数を可視化）、C) バックテストで閾値を 3〜6 に振り最適値を探す、D) 銘柄を増やす（スクリーニングが OR 条件なので計算コストは大きく増えない。NASDAQ100 全体も可能だが、閾値・VWAP near 閾値が全銘柄共通のためディフェンシブ銘柄でシグナルの質が落ちる。まずボラ高めの 30〜40 銘柄に絞るのが無難）、E) 時間帯フィルタを一時的に外す。まず A・B を同時にやり、ログが溜まったら C で閾値を決める順が無駄がない。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/trading-indicators.html">テクニカル指標: ATR と VWAP</a></li>
+  <li><a href="../pages/day-trading-strategy.html">デイトレード生存戦略（山下氏）</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/edinetdb-cli.html">edinetdb CLI</a></li>
+          
+            <li><a href="../pages/trading-indicators.html">テクニカル指標: ATR と VWAP</a></li>
+          
+            <li><a href="../pages/day-trading-strategy.html">デイトレード生存戦略（山下氏）</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

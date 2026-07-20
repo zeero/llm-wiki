@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenClaw × ローカル LLM 構築ガイド — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>OpenClaw × ローカル LLM 構築ガイド</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="openclaw--ローカル-llm-構築ガイド">OpenClaw × ローカル LLM 構築ガイド</h1>
+
+<blockquote>
+  <p>OpenClaw を完全ローカル LLM 環境（Ollama / llama-server）で運用するための構築手順。Docker / 非 Docker、Linux / macOS / Windows(WSL2) 対応。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>API 利用はすぐに上限に達する可能性があるため、OpenClaw をローカル LLM で運用する構成をまとめた手順書。バックエンドは Ollama（簡単・高速）と llama-server（llama.cpp / OpenAI 互換・本格運用）の両対応。推奨アーキテクチャは Browser/CLI → OpenClaw Gateway → Ollama または llama-server。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="openclaw-の構築">OpenClaw の構築</h3>
+
+<ul>
+  <li><strong>Docker（推奨）</strong>: <code>git clone https://github.com/openclaw/openclaw.git</code> → <code>cd openclaw</code> → <code>./docker-setup.sh</code>（build・onboard・Gateway 起動・token 発行を自動化）。ダッシュボードは <code>http://127.0.0.1:18789/</code>、token 再表示は <code>docker compose run --rm openclaw-cli dashboard --no-open</code>。</li>
+  <li><strong>ローカルインストール（非 Docker）</strong>: macOS/Linux は <code>curl -fsSL https://openclaw.ai/install.sh | bash</code>、Windows(PowerShell) は <code>iwr -useb https://openclaw.ai/install.ps1 | iex</code>（Windows は WSL2 + Ubuntu 推奨）。初期設定 <code>openclaw onboard --install-daemon</code>。</li>
+</ul>
+
+<h3 id="ローカル-llm-ollama簡単安定">ローカル LLM① Ollama（簡単・安定）</h3>
+
+<p><code>curl -fsSL https://ollama.com/install.sh | bash</code> でインストール、<code>ollama pull llama3.3</code> / <code>qwen2.5-coder:32b</code> 等でモデル取得。<code>export OLLAMA_API_KEY="ollama-local"</code> で接続し、設定で <code>model: { primary: "ollama/llama3.3" }</code> を指定。確認は <code>ollama list</code> / <code>openclaw models list</code>。</p>
+
+<h3 id="ローカル-llm-llama-serverllamacpp本命">ローカル LLM② llama-server（llama.cpp・本命）</h3>
+
+<p>llama.cpp 公式の OpenAI 互換 API サーバ（<code>/v1/chat/completions</code>・<code>/v1/models</code>・streaming 対応）で、本格 GPU 運用・複数起動向け。CPU 起動例は <code>./llama-server -m models/*.gguf --port 8080 --ctx-size 8192 --threads 8</code>、GPU は <code>--n-gpu-layers 999 --ctx-size 16384</code>。起動確認 <code>curl http://127.0.0.1:8080/v1/models</code>。OpenClaw 側は <code>OPENAI_API_KEY</code>（ダミー可）と <code>OPENAI_BASE_URL="http://127.0.0.1:8080/v1"</code> を設定し <code>model: { primary: "openai/..." }</code> を指定。systemd で常駐化（<code>Restart=always</code>、<code>LimitNOFILE=1048576</code>）が超重要とされる。</p>
+
+<h3 id="運用トラブルセキュリティ">運用・トラブル・セキュリティ</h3>
+
+<ul>
+  <li><strong>トラブル</strong>: モデルが出ない→llama-server 未起動 / <code>/v1</code> 抜け / ポート不一致。応答が遅い→ctx-size 過剰 / GPU layers 不足 / swap 不足。</li>
+  <li><strong>セキュリティ</strong>: skill/plugin は必ずコード確認、Docker/VM 分離推奨、API キーは .env 管理、外部公開時は Cloudflare Access 等。</li>
+  <li><strong>おすすめ運用</strong>: 日常利用→Ollama、重作業/コーディング→llama-server、複数モデル切替→複数 llama-server + ポート分離、公開→Cloudflare Tunnel + Access。</li>
+</ul>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/openclaw.html">OpenClaw</a></li>
+  <li><a href="../pages/local-claude-code-with-lm-studio.html">LM Studio でローカル Claude Code</a></li>
+  <li><a href="../pages/local-llm-mac-benchmark.html">Mac ローカルLLM 高速化ツール比較（mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio）</a></li>
+  <li><a href="../pages/n8n-webhook-trigger-skill.html">execute-n8n-workflow スキル開発仕様</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/claude-code-with-ollama.html">Claude Code with Ollama（Anthropic API 互換）</a></li>
+          
+            <li><a href="../pages/local-claude-code-with-lm-studio.html">LM Studio でローカル Claude Code</a></li>
+          
+            <li><a href="../pages/local-llm-mac-benchmark.html">Mac ローカルLLM 高速化ツール比較（mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio）</a></li>
+          
+            <li><a href="../pages/openclaw.html">OpenClaw</a></li>
+          
+            <li><a href="../pages/n8n-webhook-trigger-skill.html">execute-n8n-workflow スキル開発仕様</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

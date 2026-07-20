@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Fable 5 公式ガイドと使い分けの作法 — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Claude Fable 5 公式ガイドと使い分けの作法</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="claude-fable-5-公式ガイドと使い分けの作法">Claude Fable 5 公式ガイドと使い分けの作法</h1>
+
+<blockquote>
+  <p>Anthropic の最上位モデル Claude Fable 5 をめぐる出来事・公式プロンプティングガイドの 6 つのコツ・モデル使い分け（サンドイッチ型）を、tetumemo が非エンジニア向けにまとめた記事。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Claude Fable 5 は Anthropic が 2026年6月9日に公開した「Mythos クラス」の一般公開版で、Opus のさらに上に位置づけられる最上位モデル。「タスクが長く複雑になるほど他モデルとの差が広がる」性質を持つ。記事は、登場から数日での利用制限事件、リークされたシステムプロンプトから見えた設計思想、公式プロンプティングガイドの実用的なコツ 6 つ、そして「最強を全部に使わない」モデル使い分けの考え方を扱う。最後に著者作成の「司令塔 Skill（fable-orchestrator）」を配布する（記事後半は有料）。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="fable-5-の位置づけ">Fable 5 の位置づけ</h3>
+
+<ul>
+  <li>「これまでで一番賢く、一番長く集中して働けるAI」。研究機関限定の兄弟モデル Mythos 5 は基盤モデルが同一で、一部領域の安全装置（セーフガード）を外した点だけが違う。</li>
+  <li>公式は「一般に使えるAIの中で最も賢いモデル」と表明。Stripe の事例では 5,000万行の Ruby コードベースの全面移行（チームで 2ヶ月以上想定）を 1 日で完了。ベンチマーク FrontierCode でも medium effort で最高スコア。</li>
+  <li>料金は 100万トークンあたり入力 $10・出力 $50（Opus 4.8 の約 2 倍）。一気に走り切る設計ゆえ、途中で方向を誤るとやり直しのコストが大きい。</li>
+</ul>
+
+<h3 id="利用制限事件記事の記録">利用制限事件（記事の記録）</h3>
+
+<p>登場数日後の 2026年6月12日、米政府が Anthropic に Fable 5・Mythos 5 の外国籍者への提供停止を指示。Anthropic 社内の外国籍社員（Andrej Karpathy を含む）も自社 AI を使えなくなった。Anthropic は「指示には従うが判断には同意しない」と異例の声明。停止理由はジェイルブレイクのリスク → 中国関連アクセス疑惑 → 政治的信頼問題へと 3 日間で変遷したと海外報道（Axios, Politico, The Verge, Semafor 等）を引きながら整理している。</p>
+
+<h3 id="リークされたシステムプロンプトの設計思想">リークされたシステムプロンプトの設計思想</h3>
+
+<p>セキュリティ研究者が Fable 5 のシステムプロンプト全文（約1,585行・12万文字）を GitHub リポジトリ CL4R1T4S に公開（非公式）。印象的なルールとして、(1) ユーザーが口にしない診断名を付けない・自傷の代替手段すら提案しない・依存を助長しない（「また話しかけてね」等の言葉を設計レベルで封じる）ウェルビーイング設計、(2) 拒否時に箇条書きを使わない等の断り方の美学、(3) 政治的テーマで自分の意見を押しつけず両論をフェアに示す、(4) 引用時はコピペせず自分の言葉に直し出典を示す、(5) 信頼できる知識期限（2026年1月末）以降はウェブ検索してから答える正直さ、などが紹介されている。</p>
+
+<h3 id="公式プロンプティングガイドの-6-つのコツ">公式プロンプティングガイドの 6 つのコツ</h3>
+
+<p>Fable 5 は「細かく操作する道具」から「自分で考えて動く優秀な専門チーム」へと発想が変わる。人間は「操作」から「マネジメント」へ。</p>
+
+<ol>
+  <li><strong>結論から書いて</strong>: 最初の一文で「何が起きたか/何がわかったか」に答えさせる。</li>
+  <li><strong>余計なことはしない</strong>: タスクに必要なこと以外（機能追加・全体整理）をさせない境界を引く。</li>
+  <li><strong>相談と依頼を区別</strong>: 悩みを口にしただけで解決策を実行させない。「やって」と言うまで見解だけ求める。</li>
+  <li><strong>理由もセットで伝える</strong>: 「なぜやるのか」を理解したとき最良の仕事をする。目的を添える。</li>
+  <li><strong>記憶を持たせる</strong>: やり取りの重要テーマと学びをファイル（例 <code>メモ.md</code>）にまとめさせ次回参照させる。</li>
+  <li><strong>途中で止まらないで</strong>: 自律作業を指示し、元の依頼を外れない範囲は確認なしで進め、終了時のみ報告させる。
+    <ul>
+      <li><strong>おまけ（ウソの完了報告防止）</strong>: 「進捗報告前に実際の実行結果と一致するか自分で確認し、証拠のある作業だけ報告、未確認は『未確認』と書く」の一文で、社内テストでは虚偽の完了報告がほぼなくなった。</li>
+    </ul>
+  </li>
+</ol>
+
+<p>思考の力（エフォート）も軸で、ほとんどのタスクは high をデフォルト、最重要は xhigh、ルーチンは medium/low。Fable 5 は low でも従来モデルの xhigh 以上のことが多い。</p>
+
+<h3 id="モデル使い分けサンドイッチ型">モデル使い分け（サンドイッチ型）</h3>
+
+<p>AICX 協会の小澤健祐（おざけん）氏の整理を引用。「最強モデルを何にでも使う時代は終わった。工程で頭脳の大きさを変える」。</p>
+
+<ul>
+  <li><strong>上流（方針・難所突破）</strong>: 大モデル（Fable 5 / Opus 4.8）× 濃いコンテキスト。ズレが後工程を全て巻き戻すため一番投資する。</li>
+  <li><strong>中流（実装・展開）</strong>: 中モデル（Sonnet 級）。</li>
+  <li><strong>下流（整形・量産・反復）</strong>: 小モデル（Haiku / Codex 等）。</li>
+</ul>
+
+<p>上流に渡す情報の下ごしらえも小モデルでよいため「小→大→小」の往復（両端を安いモデルではさむ）で「サンドイッチ型」と呼ばれる。並列実行は速さ（タイパ）を買う手段でありコスパは下げない。実力差は「どのモデルを選べるか」より「上流にどれだけ文脈を積めるか」で決まる。</p>
+
+<h3 id="実演と過去の自分を作り直す">実演と「過去の自分を作り直す」</h3>
+
+<p>著者は Fable ロス期間に Opus 4.8 を上流に据えて代替運用し、(1) 過去記事 126 本を 65 種類のツールに整理した逆引きサイト（tetumemo.com）の作成、(2) 執筆用 Skill（tetumemo-natural）の過去差分分析による作り直し（サブエージェント並列で重い調査を分担）を実施。長く複雑な作業が得意で記憶を持てる性質は「過去の蓄積の棚卸し・磨き直し」に最適だと結論づける。配布する <code>fable-orchestrator</code> Skill は、頼みごとを工程分解し各工程のモデル向け指示文を用意する「司令塔」。</p>
+
+<h3 id="second-brain-としての活用">Second brain としての活用</h3>
+
+<p>X投稿内の記事紹介では、Fable 5を業務知識を把握した「second brain」に近い存在へ育て、他とは異なる成果物を出すための手順を段階的に解説するとしている。今回のClippingには紹介文と記事リンクのみが含まれるため、具体的な手順や本文の内容はこのページでは補完しない。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-tools.html">Claude Code 強化ツール集</a></li>
+  <li><a href="../pages/karpathy.html">Andrej Karpathy</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/karpathy.html">Andrej Karpathy</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

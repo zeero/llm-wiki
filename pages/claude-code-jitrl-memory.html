@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JitRL 式メモリ（Claude Code） — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>JitRL 式メモリ（Claude Code）</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="jitrl-式メモリclaude-code">JitRL 式メモリ（Claude Code）</h1>
+
+<blockquote>
+  <p>JitRL の考え方を応用し、Claude Code に過去の成功/失敗パターンを記憶させて「学習するAIエージェント」にする仕組み。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Claude Code は標準では CLAUDE.md によるメモリを持つが、これは手動更新で、成功/失敗の文脈や類似状況の検索を持たない。JitRL 式メモリは、各インタラクションを Policy Triplet <code>&lt;State, Action, Outcome&gt;</code> として自動記録し、ベクトル類似度で過去の経験を検索して現在のプロンプトへ注入する。勾配更新（fine-tuning）を行わず、経験リプレイとアドバンテージ重み付けで成功パターンを優先する点が特徴で、arXiv の JitRL（Just-in-Time Reinforcement Learning for LLM Agent）論文に基づく。</p>
+
+<p>配布形態は2種類が紹介されている。ひとつは babushkai/jitrl-skill として公開された Claude Code Plugin（2コマンドでインストール、Hooks 自動登録）、もうひとつは <code>~/.claude-jitrl/</code> 以下に自前で構築する完全手順である。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="policy-triplet-とスコアリング">Policy Triplet とスコアリング</h3>
+
+<ul>
+  <li><strong>State</strong>: 現在のコンテキスト（読んだファイル、エラー内容、目標）</li>
+  <li><strong>Action</strong>: Claude の行動（Edit / Write / Bash 等の tool 呼び出し）</li>
+  <li><strong>Outcome</strong>: 結果（成功/失敗、ユーザーフィードバック）</li>
+</ul>
+
+<p>スコアは成果から算出する。成功=+5、「perfect/great」フィードバックで+5、部分的成功=+2、失敗だが学びあり=-2、完全失敗=-5、といった加減点で数値化する。</p>
+
+<h3 id="アドバンテージ計算">アドバンテージ計算</h3>
+
+<p>action タイプごとの平均スコアから全体平均（baseline）を引いた値を「アドバンテージ」とし、プラスのアクションを推奨、マイナスのアクションを回避対象として提示する。</p>
+
+<pre><code class="language-text">Advantage(Edit) = 平均スコア(Edit) − 全体平均スコア
+</code></pre>
+
+<h3 id="hooks-統合">Hooks 統合</h3>
+
+<p>3つの Claude Code ライフサイクル Hook を利用する。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Hook</th>
+      <th>タイミング</th>
+      <th>役割</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>UserPromptSubmit</td>
+      <td>プロンプト送信時</td>
+      <td>類似経験を検索し「成功パターン / 失敗パターン / 推奨アプローチ」をコンテキスト注入</td>
+    </tr>
+    <tr>
+      <td>Stop</td>
+      <td>応答完了時</td>
+      <td>インタラクション詳細を記録</td>
+    </tr>
+    <tr>
+      <td>SessionEnd</td>
+      <td>セッション終了時</td>
+      <td>評価してストレージに保存</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="ストレージと検索自前実装">ストレージと検索（自前実装）</h3>
+
+<ul>
+  <li>ディレクトリ: <code>~/.claude-jitrl/{experiences,indexes,cache}</code>。経験は <code>episodes.jsonl</code>、ベクトルは Faiss（<code>IndexFlatIP</code>）で保持。プロジェクトパスの MD5 ハッシュで名前空間を分ける。</li>
+  <li>Embedding: OpenAI <code>text-embedding-3-small</code>（1536次元）。API 不在時は語のハッシュによるフォールバック embedding。結果は <code>.npy</code> でキャッシュ。</li>
+  <li>検索: 正規化した query ベクトルで内積検索し、類似度 threshold（例 0.6〜0.7）以上を採用。類似度とスコアの加重（例 0.3:0.7）で並べ替える。</li>
+  <li>依存: <code>faiss-cpu</code>, <code>numpy</code>, <code>openai</code>, <code>click</code>。設定は <code>config.yaml</code>（gamma, similarity_threshold, TTL 等）。</li>
+  <li>コマンド: <code>/jitrl:init</code>, <code>/jitrl:stats</code>, <code>/jitrl:search [query]</code>（プラグイン版）。</li>
+</ul>
+
+<h3 id="既存手段との比較">既存手段との比較</h3>
+
+<p>CLAUDE.md / claude-mem / claude-supermemory と比べ、JitRL 式は「成功/失敗スコアリング」「アドバンテージ計算」「推奨アプローチ提示」を持つ点が差別化とされる。導入効果として「同じ説明の繰り返し約60%減」等の実測が挙げられているが、著者による自己申告値である。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-metacognition.html">Claude Code への「省察」実装（メタ認知）</a></li>
+  <li><a href="../pages/claude-code-usage-techniques.html">Claude Code 活用法（Anthropic 開発チーム）</a></li>
+  <li><a href="../pages/claude-code-steering.html">Claude Code の挙動制御（7つの方法）</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/learning-with-ai-agents.html">AIエージェントと協働しながら学習する方法</a></li>
+          
+            <li><a href="../pages/claude-code-metacognition.html">Claude Code への「省察」実装（メタ認知）</a></li>
+          
+            <li><a href="../pages/claude-code-usage-techniques.html">Claude Code 活用法（Anthropic 開発チーム）</a></li>
+          
+            <li><a href="../pages/llm-memory-architecture.html">LLM Memory Architecture</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

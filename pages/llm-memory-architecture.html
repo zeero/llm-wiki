@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Memory Architecture — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>LLM Memory Architecture</h1>
+    <span class="cat-badge">Concepts</span>
+    <div class="article"><h1 id="llm-memory-architecture">LLM Memory Architecture</h1>
+
+<blockquote>
+  <p>LLM チャットアシスタントがユーザーの情報を「記憶」しているように見せるためのコンテキスト設計。ChatGPT の実測例では、vector database や会話履歴への RAG を使わず、性質の異なる4層を毎回のプロンプトに合成することで実現している。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>LLM 自体はステートレスであり、過去の会話を本質的に「覚えて」はいない。ユーザーが感じる継続性・パーソナライズは、毎メッセージ送信時にモデルへ渡すコンテキストを層状に組み立てることで作られる illusion（錯覚）である。</p>
+
+<p>出典記事は、ChatGPT の振る舞いを会話を通じてリバースエンジニアリングした結果をまとめたもの（OpenAI 非公式・推測ベース）。筆者が「自分について何を覚えているか」を尋ねたところ 33 個の事実が列挙されたが、その裏側は予想よりずっとシンプルで、vector database も会話履歴への RAG も使っていなかった、という発見が主題。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="コンテキスト構造の全体像">コンテキスト構造の全体像</h3>
+
+<p>ChatGPT が毎メッセージで受け取るコンテキストは以下の順で構成される。</p>
+
+<pre><code>[0] System Instructions        # 高レベルの振る舞い・安全ルール
+[1] Developer Instructions
+[2] Session Metadata (ephemeral)   # セッション毎に一度だけ注入、永続しない
+[3] User Memory (long-term facts)  # 長期の明示的事実
+[4] Recent Conversations Summary   # 過去チャットの軽量サマリー（タイトル+抜粋）
+[5] Current Session Messages       # 現在の会話（全文・要約なし）
+[6] Your latest message
+</code></pre>
+
+<p><code>[0]</code> <code>[1]</code> は振る舞いと安全性の定義で本題ではない。記憶機構として重要なのは <code>[2]</code>〜<code>[5]</code> の4層。</p>
+
+<h3 id="第1層-session-metadata一時的非永続">第1層: Session Metadata（一時的・非永続）</h3>
+
+<p>セッション開始時に一度だけ注入され、長期メモリには入らない。デバイス種別、ブラウザ / user-agent、おおよその location・timezone、subscription level、利用頻度、直近の model 利用分布、画面サイズ、dark mode の有無、JS 有効可否などを含む。会話の depth 平均やユーザーメッセージ長の平均といった利用パターンも含まれる。これはレスポンスを環境に合わせるためのもので、セッション終了後は残らない。</p>
+
+<h3 id="第2層-user-memory長期の明示的事実">第2層: User Memory（長期の明示的事実）</h3>
+
+<p>安定した長期事実を保存・削除する専用の tool を ChatGPT は持つ。数週間〜数ヶ月かけて蓄積し、永続的な「プロフィール」を形成する。名前・年齢、キャリア目標、経歴、進行中プロジェクト、学習中の領域、好みなど。</p>
+
+<p>保存されるのは推測ではなく、次のいずれかの明示的トリガー時のみ。</p>
+
+<ul>
+  <li>ユーザーが「remember this」「store this in memory」等と言う</li>
+  <li>モデルが OpenAI の基準に合う事実（名前・職種・明言された好み等）を検出し、会話の中でユーザーが暗黙的に同意する</li>
+</ul>
+
+<p>保存された各事実は、以降のすべてのプロンプトに独立したブロックとして注入される。「Store this in memory…」「Delete this from memory…」で追加・削除できる。</p>
+
+<h3 id="第3層-recent-conversations-summary軽量サマリー">第3層: Recent Conversations Summary（軽量サマリー）</h3>
+
+<p>過去チャットに対して RAG をかけるのではなく、軽量なダイジェストを使う点が筆者にとって最大の驚きだった。<code>&lt;Timestamp&gt;: &lt;Chat Title&gt;</code> にユーザーメッセージの抜粋（snippet）を添えた形式で、直近の会話を要約する。</p>
+
+<ul>
+  <li>要約対象はユーザーのメッセージのみ（アシスタントの発話は含まない）</li>
+  <li>観測時点でおよそ 15 件のサマリーが利用可能</li>
+  <li>詳細な文脈ではなく、直近の関心事の「ゆるいマップ」として機能する</li>
+</ul>
+
+<p>これにより full transcript を引き込まずにチャット間の継続性を得る。</p>
+
+<h3 id="第4層-current-session-messagessliding-window">第4層: Current Session Messages（sliding window）</h3>
+
+<p>現在の会話の通常の sliding window。要約されず全文がそのまま渡される。</p>
+
+<ul>
+  <li>上限はメッセージ数ではなく token count ベース</li>
+  <li>上限に達すると現在セッションの古いメッセージから roll off する（ただし memory facts と conversation summaries は残る）</li>
+  <li>全文が verbatim で渡されるため、セッション内の一貫した推論が可能</li>
+</ul>
+
+<h3 id="なぜ-rag-より優れうるのか">なぜ RAG より優れうるのか</h3>
+
+<p>伝統的な RAG は、過去の全メッセージの embedding 化、クエリ毎の類似検索、full context の引き込みを要し、latency と token コストが高い。ChatGPT の方式は軽量サマリーを事前計算して直接注入するだけで、詳細な文脈を犠牲にする代わりに速度と効率を得る。パイプライン全体を自社で制御できる場合、複雑な検索より curated（厳選）でシンプルな方式が上回りうる、という実践的エンジニアリングの教訓になっている。</p>
+
+<h3 id="トレードオフ">トレードオフ</h3>
+
+<p>明確なトレードオフは「詳細な歴史的文脈 vs. 速度・効率」。ChatGPT は前者を犠牲にするが、大半の会話ではそれが正しいバランスであり、重要なもの（好み・目標・直近の関心）を覚えつつ高速・応答性を保つ。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-jitrl-memory.html">JitRL 式メモリ（Claude Code）</a></li>
+  <li><a href="../pages/rag-explained.html">RAG（Retrieval-Augmented Generation）</a></li>
+  <li><a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/llm-wiki.html">LLM-wiki</a></li>
+          
+            <li><a href="../pages/open-knowledge-format.html">Open Knowledge Format (OKF)</a></li>
+          
+            <li><a href="../pages/rag-explained.html">RAG（Retrieval-Augmented Generation）</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

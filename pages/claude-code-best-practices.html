@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-code-best-practice リポジトリ — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>claude-code-best-practice リポジトリ</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="claude-code-best-practice-リポジトリ">claude-code-best-practice リポジトリ</h1>
+
+<blockquote>
+  <p>GitHub でスター 1,500 超を集めた Claude Code の設定パターン集リポジトリ <code>shanraisshan/claude-code-best-practice</code> と、その実践ガイド。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p><code>shanraisshan/claude-code-best-practice</code>（2025年10月作成、”practice made claude perfect”）は、アプリのコードベースではなく Claude Code の設定・ワークフローのテンプレート/リファレンス集。CLAUDE.md の書き方、Command → Agent → Skills の 3 層アーキテクチャ、Hooks 通知、settings.json 全オプション、モノレポでの読み込み挙動、RPI ワークフローなどを網羅する。README の「MY EXPERIENCE」に実運用の経験則がまとまっている点が特に参考になる。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="著者の経験則my-experience">著者の経験則（MY EXPERIENCE）</h3>
+
+<ul>
+  <li><strong>Workflows</strong>
+    <ul>
+      <li>CLAUDE.md は 150 行を超えない（長いと守られない指示が増える。ただし 100% 保証ではない）。<code>/memory</code>・<code>/rules</code>・<code>constitution.md</code> は「何も保証しない」とし、CLAUDE.md に直接書くのが最も確実という立場。</li>
+      <li>ワークフローには agents より commands を使う。汎用エージェント（general QA, backend engineer）ではなく、skills（progressive disclosure）を持つ feature specific subagents を作る。</li>
+      <li>コンテキスト使用量は最大 50% で手動 <code>/compact</code>。サブタスクは 50% 以内で完了できるサイズに分割。ステータスラインで常に監視。</li>
+      <li>小さいタスクにはワークフロー不要（vanilla cc is better than any workflows with smaller tasks）。</li>
+      <li>常にプランモードから始める。タスク完了ごとに頻繁にコミットする。</li>
+    </ul>
+  </li>
+  <li><strong>Utilities</strong>: IDE ではなく iTerm（クラッシュ対策）、Wispr Flow による音声プロンプト（10x）、claude-code-voice-hooks、ステータスライン、git worktrees による並列開発、<code>dangerously-skip-permissions</code> の代わりにワイルドカード付き <code>/permissions</code>（<code>Bash(npm run *)</code> 等）、<code>/sandbox</code> による権限プロンプト削減、output styles（学習時 Explanatory / コーチング Learning）、<code>/keybindings</code>。</li>
+  <li><strong>Debugging</strong>: <code>/doctor</code>、ログを見たいターミナルはバックグラウンドタスクで実行させる、MCP（Claude in Chrome / Playwright / Chrome DevTool）でコンソールログを直接見せる、スクリーンショット提供。</li>
+</ul>
+
+<h3 id="command--agent--skills-の-3-層アーキテクチャ">Command → Agent → Skills の 3 層アーキテクチャ</h3>
+
+<p>このリポジトリの中核パターン。天気情報取得を題材にした実装例（weather-orchestration）を含む。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>層</th>
+      <th>配置場所</th>
+      <th>役割</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Command</td>
+      <td><code>.claude/commands/*.md</code></td>
+      <td>エントリーポイント。<code>/command-name</code> で起動</td>
+    </tr>
+    <tr>
+      <td>Agent</td>
+      <td><code>.claude/agents/*.md</code></td>
+      <td>ワークフロー実行主体。Skills をプリロード</td>
+    </tr>
+    <tr>
+      <td>Skills</td>
+      <td><code>.claude/skills/*/SKILL.md</code></td>
+      <td>ドメイン知識・手順書。Agent 起動時にコンテキストへ注入</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>例: <code>/weather-orchestrator</code> → <code>weather</code> エージェント起動 → <code>weather-fetcher</code>・<code>weather-transformer</code> スキルがプリロード済み → 手順に従い順次処理。Progressive Disclosure（段階的開示）により、必要な情報が必要なタイミングでだけコンテキストに入る。</p>
+
+<p>なお公式では <strong>custom slash commands は skills に統合</strong>されており（<code>.claude/commands/</code> も動くが skills 推奨）、skills はサポートファイル・呼び出し制御・subagent 実行などをサポートする。</p>
+
+<h3 id="hooks-による音声通知">Hooks による音声通知</h3>
+
+<p>各イベント（ツール使用前後・セッション開始終了・コンパクト前など）でシェルスクリプトを実行。リポジトリでは ElevenLabs TTS 音声で通知（git commit 時は専用音声など）。設定は <code>hooks-config.json</code>（チーム共有）と <code>hooks-config.local.json</code>（個人用・gitignore）の 2 層構造。</p>
+
+<h3 id="settingsjson--パーミッション">settings.json / パーミッション</h3>
+
+<p><code>reports/claude-settings.md</code> に全オプションが網羅され、公式ドキュメントの補完資料として使える。パーミッションはワイルドカード構文（<code>Edit(*)</code>, <code>Bash(npm run *)</code>, <code>Bash(git *)</code>, <code>WebFetch(domain:*)</code>, <code>mcp__*</code>）で許可、<code>Read(.env)</code>・<code>Read(./secrets/**)</code> を deny に入れて機密漏洩を防ぐ。</p>
+
+<h3 id="モノレポでの読み込み挙動">モノレポでの読み込み挙動</h3>
+
+<ul>
+  <li><strong>CLAUDE.md</strong>: 起動ディレクトリから上位のものはすべて起動時に読み込み（Ancestor Loading）、サブディレクトリのものはそのファイルにアクセスしたとき遅延読み込み（Descendant Loading）。</li>
+  <li><strong>Skills</strong>: 上方向探索はしない。ルートの <code>.claude/skills/</code> は常に読まれ、サブディレクトリのものはアクセス時に自動検出。description は常にコンテキストに入るが本文は呼び出し時に読み込まれる。</li>
+</ul>
+
+<h3 id="rpiresearch--plan--implementワークフロー">RPI（Research → Plan → Implement）ワークフロー</h3>
+
+<p>大きな機能開発向け。<code>/rpi:research</code>（実現可能性分析と GO/NO-GO 判定）→ <code>/rpi:plan</code>（<code>pm.md</code>・<code>ux.md</code>・<code>eng.md</code>・<code>PLAN.md</code> を自動生成）→ <code>/rpi:implement</code>（フェーズごとに実装し code-reviewer がレビュー）。「Research で NO-GO なら止める」設計が無駄な実装を防ぐ。個人開発には重すぎるが、チーム開発・大規模機能では有用。</p>
+
+<h3 id="規模別の取り入れ方">規模別の取り入れ方</h3>
+
+<ul>
+  <li>個人・小規模: CLAUDE.md 150 行以内、50% での手動 compact、パーミッション設定、小タスクはワークフローなし。</li>
+  <li>中〜大規模: 3 層構造、機能特化エージェント、Hooks 通知、モノレポ配置設計。</li>
+  <li>チーム: RPI ワークフロー、settings.json / hooks-config.json のチーム共有、<code>.local.json</code> による個人設定分離。</li>
+</ul>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-tools.html">Claude Code 強化ツール集</a></li>
+  <li><a href="../pages/claude-code-settings.html">Claude Code の権限・設定管理</a></li>
+  <li><a href="../pages/rpi-workflow.html">RPI（Research → Plan → Implement）ワークフロー</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/claude-code.html">Claude Code</a></li>
+          
+            <li><a href="../pages/claude-code-blog-automation.html">Claude Code でのブログ記事執筆自動化</a></li>
+          
+            <li><a href="../pages/claude-code-settings.html">Claude Code の権限・設定管理</a></li>
+          
+            <li><a href="../pages/claude-code-tools.html">Claude Code 強化ツール集</a></li>
+          
+            <li><a href="../pages/rpi-workflow.html">RPI（Research → Plan → Implement）ワークフロー</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

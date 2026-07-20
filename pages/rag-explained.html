@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG（Retrieval-Augmented Generation） — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>RAG（Retrieval-Augmented Generation）</h1>
+    <span class="cat-badge">Concepts</span>
+    <div class="article"><h1 id="ragretrieval-augmented-generation">RAG（Retrieval-Augmented Generation）</h1>
+
+<blockquote>
+  <p>RAG は、LLM 単体では知り得ない社内情報や最新情報を、外部から検索して回答生成時に注入する仕組み。「世間知らずな AI 本部長を、8 人の専門スタッフで固めた過保護なオフィス」という比喩で全体像を掴める。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>素の生成 AI（ChatGPT など）は、社内の事情も最新の規定も知らないまま来客対応を任される「たった一人の人物」に過ぎない。放っておくと知らないことまで喋り、hallucination（もっともらしい嘘）を起こす。</p>
+
+<p>RAG はこの AI を一人にせず、周囲に検索・整形・安全確認の専門機能を配置することで、「渡された資料に基づいてのみ答える」よう制御するアーキテクチャ。ユーザーの質問に対し、関連文書を検索（Retrieval）し、それを文脈として与えて回答を生成（Generation）する。</p>
+
+<h2 id="詳細rag-を構成する-9-つの役割">詳細：RAG を構成する 9 つの役割</h2>
+
+<p>出典記事は RAG のコンポーネントを「RAG 商事」という架空オフィスの 9 人の社員に例えている。オフィスは「エントランス」「役員フロア」「地下バックヤード」の 3 層構造。</p>
+
+<h3 id="a-エントランス入口の門番">A. エントランス（入口の門番）</h3>
+
+<ul>
+  <li><strong>Input Rail（警備員）</strong> — 入力プロンプトの検査。jailbreak 攻撃や機密・個人情報の持ち込みを玄関で止める。技術: Guardrails（NeMo Guardrails, LlamaGuard など）。</li>
+  <li><strong>Smart Reception（受付）</strong> — 質問の振り分け（routing）と即答。挨拶や一般常識はここで返し、高コストな LLM 呼び出しを避ける。同じ質問はキャッシュから即答。コスト管理の要。技術: Semantic Router（Intent Classification）/ Semantic Cache。</li>
+  <li><strong>Query Transformer（通訳スタッフ）</strong> — 会話履歴を読み、曖昧な質問（「あれの件」）を検索に適した正式なクエリへ書き換える。それ自体が軽量な小型 LLM（SLM）で動く。技術: Query Expansion / HyDE / Small Language Models (SLMs)。</li>
+</ul>
+
+<h3 id="b-役員フロアrag-の心臓部">B. 役員フロア（RAG の心臓部）</h3>
+
+<ul>
+  <li><strong>Retriever + ACL（倉庫課長）</strong> — アクセス権（社員証）を確認したうえで、文書ストアから関連資料を搬送する。キーワード一致とベクトル的な意味の近さの両方をかき集める。技術: Hybrid Search（Vector + Keyword）/ Access Control List。</li>
+  <li><strong>Reranker（本部長秘書）</strong> — 検索で集まった大量の候補を選別し、本当に関連する少数（上位数件）に絞る。さらに LLM に渡す直前、「この資料からだけ答えよ」「引用元を示せ」という指示をプロンプトとして付与する。技術: Reranking Model / Prompt Engineering（Context Construction）。</li>
+  <li><strong>Generator with Citation（AI 本部長）</strong> — ここが世に言う生成 AI（LLM）。博識だがトークン単価が高く、放置すると hallucination を起こす。秘書が渡した資料と指示に従い、引用付きで回答を生成する。技術: Large Language Models (LLM) + System Prompting。</li>
+</ul>
+
+<h3 id="出口exit">出口（Exit）</h3>
+
+<ul>
+  <li><strong>Output Rail（コンプラ室長）</strong> — 生成された回答を出口で検閲。差別発言・機密漏洩・誤情報を検知する。ここでもチェック専用の小型 AI が使われる。技術: Output Guardrails / Hallucination Detection。</li>
+</ul>
+
+<h3 id="c-地下バックヤード表に出ない土台">C. 地下バックヤード（表に出ない土台）</h3>
+
+<ul>
+  <li><strong>Ingestion Pipeline（文書管理部）</strong> — 届いた文書を取り込み、chunk（適切な大きさへの分割）し、embedding して文書ストアへ格納する事前準備。ここが雑だと検索してもゴミしか出ず、RAG プロジェクト失敗の真因になりやすい。技術: ETL Pipeline / OCR / Chunking / Embedding。</li>
+  <li><strong>Observability（品質管理室）</strong> — 稼働の監視と、ユーザー評価（Good/Bad フィードバック）の回収・集計。精度低下を検知し継続的改善（feedback loop）に回す。技術: Tracing / Monitoring / User Feedback Loop。</li>
+</ul>
+
+<h2 id="詳細質問が回答になるまでの流れ">詳細：質問が回答になるまでの流れ</h2>
+
+<p>「例の経費の件、いくらまで出る？」という質問を例にした処理フロー:</p>
+
+<ol>
+  <li><strong>Input Rail</strong> — 攻撃者でないか入力を検査。</li>
+  <li><strong>Smart Reception</strong> — 意図を判定。雑談やキャッシュ済みなら即答し、LLM を呼ばない。今回は新規の社内規定質問なので奥へ通す。</li>
+  <li><strong>Query Transformer</strong> — 会話履歴から「例の経費」を「2025 年度・大阪出張旅費・宿泊費上限」等の正式クエリへ書き換え。</li>
+  <li><strong>Retriever</strong> — アクセス権を確認し、キーワード一致＋意味的に近い文書を大量に取得（例: 100 件）。</li>
+  <li><strong>Reranker &amp; Prompting</strong> — 関連する少数（例: 3 枚）に絞り、「自分の知識は使わず、この資料だけで、引用付きで答えよ」という指示を添える。</li>
+  <li><strong>Generator</strong> — 渡された資料のみを根拠に、引用元を示して回答を生成。</li>
+  <li><strong>Output Rail</strong> — 回答を最終検閲し、問題なければ返す。</li>
+</ol>
+
+<h2 id="ポイント">ポイント</h2>
+
+<ul>
+  <li>RAG の主役は生成 AI に見えるが、実際は検索・整形・ガードレールの周辺機能が品質とコストを支えている。</li>
+  <li>コスト最適化の観点が随所にある（Smart Reception の即答・キャッシュ、Reranker による文脈圧縮）。高コストな LLM 呼び出しをいかに減らすかが設計上重要。</li>
+  <li>hallucination 対策は多層防御（Reranker の指示注入 → Generator への制約 → Output Rail の検知）で行う。</li>
+  <li>RAG プロジェクトの失敗は華やかな生成部ではなく、地下の Ingestion Pipeline（chunking / embedding などのデータ前処理）に起因することが多い。</li>
+</ul>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/llm-memory-architecture.html">LLM Memory Architecture</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/dify.html">Dify</a></li>
+          
+            <li><a href="../pages/llm-memory-architecture.html">LLM Memory Architecture</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

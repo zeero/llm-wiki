@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loop Engineering — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Loop Engineering</h1>
+    <span class="cat-badge">Concepts</span>
+    <div class="article"><h1 id="loop-engineering">Loop Engineering</h1>
+
+<blockquote>
+  <p>コーディングエージェントを手でプロンプトする代わりに、「エージェントをプロンプトするシステム（loop）」を設計する実践。レバレッジの中心が「プロンプトを書くこと」から「プロンプトを出す仕組みを設計すること」へ移動したという主張。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Loop engineering は、Addy Osmani（Google Chrome チーム）が 2026 年 6 月に命名・記事化した概念で、「自分自身をプロンプター（prompter）の座から外し、代わりにプロンプトを出すシステムを設計する」ことを指す。同じ週に Peter Steinberger（OpenClaw 作者、後に OpenAI）と Boris Cherny（Anthropic の Claude Code リード）がほぼ同時に同じ趣旨を発信した（practice first, name second: 実践が先行し名前は後から付いた）。</p>
+
+<ul>
+  <li>Steinberger: 「もはやコーディングエージェントをプロンプトするのではなく、エージェントをプロンプトする loop を設計すべき」</li>
+  <li>Cherny: 「私はもう Claude をプロンプトしない。Claude をプロンプトして次に何をすべきか決める loop を走らせている。私の仕事は loop を書くことだ」</li>
+</ul>
+
+<p>従来の prompt / context / harness engineering がいずれも「キーボードの前に座る人間」を前提にしていたのに対し、loop engineering はその前提を削除する。人間は loop の<strong>内側（実行者）ではなく外側（設計者）</strong>に移る。名前が実践に数か月遅れて付いたのは、（1) エージェントが非自明なタスクを無人で完遂できるほど信頼できるようになり、(2) 主要 harness にスケジューリング primitive が現れ、(3) 単一 run のコストが「タイマーで繰り返し回しても無駄に見えない」水準まで下がった、という 3 条件が揃ったため。</p>
+
+<h2 id="四層スタックprompt--context--harness--loop">四層スタック（Prompt → Context → Harness → Loop）</h2>
+
+<p>各層は下の層より一段大きい単位を扱い、積み重なる（置き換えではない）。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>層</th>
+      <th>扱う単位</th>
+      <th>中心的な問い</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Prompt eng.</td>
+      <td>1 つのプロンプト</td>
+      <td>モデルに何を伝えるか</td>
+    </tr>
+    <tr>
+      <td>Context eng.</td>
+      <td>今の window</td>
+      <td>何を retrieve / summarize / clear するか</td>
+    </tr>
+    <tr>
+      <td>Harness eng.</td>
+      <td>単一の run</td>
+      <td>どのツール・アクション、何を「done」とするか</td>
+    </tr>
+    <tr>
+      <td>Loop eng.</td>
+      <td>繰り返し</td>
+      <td>どうやって自分で何度も回させるか</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Loop は harness の「一段上」に位置し、harness が残した「人間を待つ」部分を自動化する。harness は単一 run を武装させるが、それを繰り返させはしない。loop は timer で起き、sub-agent を spawn し、自分の出力を次ラウンドの入力に食わせる（feeds itself）。</p>
+
+<h3 id="失敗の-blast-radius-は層ごとに違う">失敗の blast radius は層ごとに違う</h3>
+
+<p>同じバグ（エージェントが関数の戻り値を読み違える）でも、層が上がるほど発覚が遅れ被害が累積する。prompt 層なら 1 回の誤答で即座に気づく。loop 層では誤った前提が state file に書き込まれ、翌朝「確定した事実」として読み戻され、多数の turn にわたって積み上がる。<strong>ミスのコストは「発覚までに生き延びた turn 数」に比例し、loop は構造上その turn 数を最大化する機械</strong>。だからこそ loop engineering の本当の難所は loop を作ることではなく、「no と言える何か」を loop の中に据えることにある。</p>
+
+<h2 id="一つの-turn-を構成する-5-つの-move">一つの turn を構成する 5 つの move</h2>
+
+<p>1 回の turn は具体的に 5 つの動作を行う。どれか 1 つを欠くと loop は回らない、あるいは空回りする。</p>
+
+<ul>
+  <li><strong>Discovery（発見）</strong>: この turn が何をすべきかを自分で見つける。skill が CI failures / open issues / recent commits を読む。エージェントにリストを渡すのではなく自分で仕事を見つけさせるのが要点。loop 全体の品質上限を決める move。</li>
+  <li><strong>Handoff（引き渡し）</strong>: スケジューリング系から実作業エージェントへタスクを渡す。各 finding が独立した git worktree を得て、複数エージェントが衝突せず並行変更する。</li>
+  <li><strong>Verification（検証）</strong>: 手を抜きやすく最も削ってはいけない move。書いたエージェントとは別の sub-agent（別の instruction、時に別モデル）がレビューする。これが「no と言える何か」。</li>
+  <li><strong>Persistence（永続化）</strong>: 結果を会話の外に残す。connector 経由の PR・ticket 更新、処理不能分の inbox、進捗を記録する state file。</li>
+  <li><strong>Scheduling（スケジューリング）</strong>: 1 つの turn を loop にする move。automation が毎朝自動起動し、state file が未完 finding を翌日へ持ち越す。</li>
+</ul>
+
+<h2 id="loop-を構成する-6-つの部品parts">loop を構成する 6 つの部品（parts）</h2>
+
+<p>move が「1 turn で何が起きるか」なら、parts は「回すために手元に何が要るか」。両者は対応する（discovery↔skills, handoff↔worktrees, verification↔sub-agents, persistence↔memory, scheduling↔automations, connectors は persistence/discovery を跨ぐ）。</p>
+
+<ul>
+  <li><strong>Automations</strong>: loop の heartbeat。schedule / event / trigger で発火し、他の全部品がこれにぶら下がる。cron に貼った指示の壁ではなく、名前付き skill を trigger すべき。Claude Code の <code>/loop</code>（cadence で再実行）と <code>/goal</code>（書いた条件が真になるまで継続、別の小型モデルが完了判定）が代表 primitive。</li>
+  <li><strong>Worktrees</strong>: 並行のための独立作業ディレクトリ。同一 repo history を共有しつつ別ブランチ・別チェックアウトなので、あるエージェントの編集が別のチェックアウトに物理的に触れられない。価値は並行度に比例する。ただし機械的衝突を消しても、実際に何並列回せるかは<strong>あなたのレビュー帯域が天井</strong>。</li>
+  <li><strong>Skills</strong>: プロジェクト知識を 1 つの <code>SKILL.md</code> に永続化し、毎 turn ゼロから context を再導出するのを防ぐ。Osmani はこれが払う対価を <strong>intent debt（毎回プロジェクトを説明し直すコスト）</strong>と呼ぶ。skill は再利用・保守できるが、プロンプトの壁は腐る。</li>
+  <li><strong>Connectors</strong>: MCP（Model Context Protocol）上に構築され、issue tracker / database / staging API / Slack など外界に loop を接続する。filesystem しか見えない loop は tiny な loop。connector が loop の視野半径を決め、一方のツール向けに書いた connector は多くの場合そのまま他方でも動く。回収が速い順: GitHub → Linear/Jira → Slack → Sentry。</li>
+  <li><strong>Sub-agents（generator/evaluator の分離）</strong>: 書くエージェントと判定するエージェントを分ける。1 つが選手兼審判だと審判が身内を贔屓する。詳細は下節。</li>
+  <li><strong>Memory（state file）</strong>: 単一会話の外に生きる永続状態（markdown / Linear board / JSON）。「エージェントは忘れる、repo は忘れない（the agent forgets, the repo does not）」。memory は context とは別物（context は今ラウンドの視界で refresh で flush、memory はラウンド・日を跨いで残る）。</li>
+</ul>
+
+<h2 id="generator-と-evaluator-の分離makerchecker">Generator と Evaluator の分離（maker–checker）</h2>
+
+<p>loop の最難所は「no と言える何か」を据えること、そしてコードを書いたエージェントこそ最も no を言わない。Anthropic の Prithvi Rajasekaran の観察: エージェントに自作物を採点させると、人間が見て凡庸でも自信満々に褒める。これは賢さの問題ではなく「自分の宿題を採点している」こと。書かれた context には「なぜそう書いたか」の自己説得が詰まっており、自分の出力を見るとき結果ではなく自己説得の連鎖を見てしまう。</p>
+
+<ul>
+  <li><strong>修正より skeptic を tune する</strong>: generator を自己批判的にするのは筋が悪い。独立した evaluator を懐疑的に調律する方がはるかに tractable。GAN（generative adversarial networks）の発想（片方が作り、片方が粗探し）を generator/evaluator に移植したもの。</li>
+  <li><strong>evaluator は読むだけでなく act すべき</strong>: コードを読むだけだと「正しく見えるか」しか判定しない。Playwright MCP に繋いでページを開き・クリックし・スクリーンショットを撮り・DOM を検査させ、「JSX が正しく見える」から「ボタンを押したら遷移した、これがその証拠」へ判定根拠を移す。基盤モデルも替えると盲点が減る。community の較正: 「証明されるまでこのコードは壊れていると仮定せよ」を default stance にする。</li>
+  <li><strong><code>/goal</code> = 停止条件の maker–checker</strong>: 各 turn 後に小型高速モデルが条件成立を判定し、未成立なら制御を返さず次の turn を回す。完了判定は作業したモデルではなく fresh model が下す。銀行の maker–checker 原則（大口送金の入力者と承認者は別人）を停止条件に適用したもの。<code>/goal</code>（条件成立まで）と <code>/loop</code>（interval で単に再実行）を混同しないこと。</li>
+</ul>
+
+<p>このパターンは Anthropic の 2024 年 12 月エンジニアリング記事の <strong>evaluator-optimizer pattern</strong> を別名で語ったもの。<strong>loop の品質の下限は evaluator が決める</strong>（generator の水準は「何を作れるか」、evaluator の水準は「何を作らせないか」を決める）。</p>
+
+<h2 id="loop-を建てるべきか4-条件テストと-30-秒チェック">loop を建てるべきか（4 条件テストと 30 秒チェック）</h2>
+
+<p>loop はコストを回収できる 4 条件を満たして初めて元が取れる。1 つでも外すと loop は返るより多く消費する。</p>
+
+<ul>
+  <li><strong>タスクが繰り返す（最低週次）</strong>: setup コストを多数 run で amortize する。一度きりなら良いプロンプト 1 発の方が速く安い。</li>
+  <li><strong>検証が自動化されている</strong>: 人間不在で work を fail できるもの（test suite / type checker / linter / build）。自動 gate がなければ結局 diff を全部読む椅子に逆戻り。</li>
+  <li><strong>token budget が無駄を吸収できる</strong>: loop は context を re-read・retry・explore し、ship するか否かに関わらず token を燃やす。unmetered な人には自明、metered plan の人には reckless に映る。</li>
+  <li><strong>エージェントが senior engineer のツールを持つ</strong>: logs、再現環境、書いたコードを実行して壊れを見る能力。なければ盲目で iterate する。</li>
+</ul>
+
+<p>タクティカルな 30 秒チェック（1 つでも欠けたら手動プロンプトに留める）: 週次以上の頻度 / test・type・build・lint で不良出力を reject 可能 / エージェントが変更コードを実行可能 / <strong>hard stop（token・iteration・time 上限）がある</strong> / merge・deploy・依存変更の前に人間がレビューする gate がある。</p>
+
+<p>良い最初の loop: CI failure triage、dependency bump PR、lint-and-fix、flaky test の再現、強い test を持つコードでの issue-to-PR draft。悪い最初の loop（人間が椅子に必要）: architecture rewrite、auth/payments、production deploy、曖昧な product work、「done」が判断で決まるもの。</p>
+
+<p><strong>重要な指標は cost per accepted change</strong>（消費 token でも試行 task 数でもない）。accepted-change rate が 50% を切るなら loop が省いたはずのレビュー作業をしており、loop は負けている。</p>
+
+<h2 id="open-loop-と-closed-loop--単一エージェントと-fleet">Open loop と Closed loop / 単一エージェントと fleet</h2>
+
+<ul>
+  <li><strong>Open loop</strong>: 探索的。ゴールだけ与えて roam させる。刺激的だが token を凄まじく燃やし、standards の緩いプロジェクトに向けると slop machine 化する。unlimited budget がない 90% には未だ非実用的。</li>
+  <li><strong>Closed loop</strong>: 有界。人間が end-to-end のパスを先に設計する（明確なゴール・定義された step・各 step の evaluation・停止/引き継ぎ点）。通常予算で回り、毎 run 良くなる。<strong>今日の実務のほとんどは closed loop から始めるべき</strong>、quality gate を整えてから open にする。</li>
+  <li><strong>単一エージェント loop</strong>: 1 つの脳が全 cycle を回す。自分の下書きを推敲する人に近い。フォーカスされた単純タスク向き。</li>
+  <li><strong>fleet loop</strong>: orchestrator がゴールを分割し specialist に渡し、specialist が subagent に narrow work を渡す。木全体が同じ 5 stage（DISCOVER → PLAN → EXECUTE → VERIFY → ITERATE）を回す。チーム全体でプロジェクトを回すイメージ。</li>
+</ul>
+
+<h2 id="5-つの失敗パターン各-move-を欠いた形">5 つの失敗パターン（各 move を欠いた形）</h2>
+
+<ul>
+  <li><strong>Nodding loop（verification 欠落）</strong>: 最頻。書いたエージェントが自分で good と宣言。数百 turn 一度も自分に no と言わないのは実務上あり得ず、real check が無い証拠。</li>
+  <li><strong>Amnesiac loop（persistence 欠落）</strong>: 結果が flush される context window にしか無く、翌 turn が同じ work を再発見・再実行して衝突。累積的進捗がゼロ。</li>
+  <li><strong>Manual loop（scheduling 欠落）</strong>: automation の無い loop は human が手で回すスクリプト。デモ日は動くが注意が逸れた日に静かに止まる。</li>
+  <li><strong>Blind loop（discovery 欠落）</strong>: 人間が毎朝 work を手渡す（「このバグ 3 つ直して」）。doing は自動化したが finding は自動化していない。何を work するか選ぶのが高価な部分なので節約は見かけより小さい。</li>
+  <li><strong>Tangled loop（handoff 欠落）</strong>: 並行エージェントが同一作業ディレクトリを変更し編集が衝突。単一エージェントでは見えず、初めて 5 並列した朝に露見。</li>
+</ul>
+
+<p>関連する既知の失敗として <strong>Ralph Wiggum loop</strong>（Geoffrey Huntley が記録・命名）: 完了時のみ completion token を出すはずのエージェントが早々に出し、half-done で loop が exit する。real verifier 無し・soft completion 条件・hard stop 無しの合わせ技。修正は step の gate = <strong>客観的に work を fail できるもの</strong>（意見を持つ verifier ではなく、pass/fail する test、compile する/しない build、0/非 0 を返す linter）。他に goal drift（長セッションで要約が lossy になり「X するな」制約が消える）、self-preferential bias、agentic laziness（部分完了で「done enough」宣言）。</p>
+
+<h2 id="静かに溜まる-4-つのコスト">静かに溜まる 4 つのコスト</h2>
+
+<p>いずれも loop 稼働中はアラームを鳴らさず、互いを強化し合い（unverified 出力 → 理解の遅れ → surrender → より長く回り消費増 → さらに unverified 出力）、ある朝一斉に請求される。</p>
+
+<ul>
+  <li><strong>Verification debt（検証負債）</strong>: 「runs」と「right」の隙間、test がカバーしない所に溜まる未検証出力。gard は独立 evaluator。</li>
+  <li><strong>Comprehension rot / debt（理解の腐敗）</strong>: loop が自分の書いていないコードを速く ship するほど、repo の中身と自分の理解の距離が広がる。gard は出力を定期 sample し、数変更を自分で説明してみる（説明できない = 地図が遅れている signal）。</li>
+  <li><strong>Cognitive surrender（認知的降伏）</strong>: 意見を持つのをやめ loop の返しをそのまま受け入れる誘惑。同じ「loop を設計する」行為が、判断を伴えば cure、思考回避のためなら accelerant（same action, opposite result）。gard は「loop は execute できるが decide はできない」という一線。</li>
+  <li><strong>Token blowout</strong>: 直接請求を叩く唯一のコスト。helper を孵し retry し回り続けるので、1 バグが一晩空回りして見慣れぬ請求を生む。gard は出荷前の hard cap（per-run / daily budget、max retries）。</li>
+</ul>
+
+<p>さらに <strong>security tax</strong>: 無人 loop は無人の attack surface。脅威モデル = 生成コードの未レビュー merge（SAST・dependency audit・secret scanning を含む gate が必要）、injection vector としての skill（自動 install する skill の記述に潜む prompt injection、install 前に source を audit）、logs に散る credentials（本番 loop では verbose logging を無効化）、permission scope creep（30 日ごとに再 audit）。</p>
+
+<h2 id="実在する-3-つの-loop">実在する 3 つの loop</h2>
+
+<p>3 例はスケールが桁違いだが同じ骨格を共有する: trigger が start を押し、constraints が rail に留め、human checkpoint が末尾に座る。「寝ている間に走る」はモデルの強さではなく骨格の堅さの問題。</p>
+
+<ul>
+  <li><strong>Osmani の morning triage</strong>: 1 人・1 マシン。automation が朝自動起動 → triage skill が昨日の失敗 CI・open issues・recent commits を読み state file/Linear board に書く → 各 finding が isolated worktree を開き、1 sub-agent が fix を draft、2 つ目が skill・test に照らしレビュー → connector が PR を開き ticket を更新 → 処理不能分は inbox で人間待ち。automation は指示の壁ではなく skill を invoke するのが肝。</li>
+  <li><strong>Stripe の Minions（週 1,300+ PR、1 行も手書きなし）</strong>: Steve Kaliski が語る enterprise 規模。trigger は軽い（Slack で bot に @、emoji reaction）。信頼性の源はモデルが起きる<strong>前</strong>の deterministic orchestrator が context を組み立てる部分（links を scan、Jira を pull、Sourcegraph + MCP で関連コードを特定）。決定論的ロジックで解ける仕事は確率的モデルに渡さない。オープンソースツール <strong>Goose</strong> の fork で、reliability はモデルサイズではなく constraints の質から来るのが核心。deterministic gate（linter を走らせエージェントは skip 不可、commit）と LLM step が interleave する。それでも 1,300 PR は人間がレビューする（人間は去らず「書く机」から「レビューする机」へ移った）。</li>
+  <li><strong>「寝ている間に走る」が実際に依存するもの</strong>: local <code>/loop</code>・desktop scheduled task はマシン ON が必要。マシン OFF で走らせるなら Cloud Routines か GitHub Actions schedule trigger。local はマシン ON を代償に頻度（最小 1 分）と local file 可視性を、cloud は真の自律を代償に粗い interval（最小 1 時間）と毎回 fresh clone を買う。成熟した loop は両方使う（内側の tight check に local、夜間 sweep に cloud）。</li>
+</ul>
+
+<h2 id="prompt-engineer-と-loop-engineer--判断の経済学">Prompt Engineer と Loop Engineer / 判断の経済学</h2>
+
+<ul>
+  <li><strong>Prompt Engineer</strong>: より良い指示を書く（言語スキル）。良いプロンプト → 良い単一出力。毎 run 手でレビューし、自分が feedback loop。</li>
+  <li><strong>Loop Engineer</strong>: より良い feedback cycle を設計する（ソフトウェアエンジニアリングスキル）。良い loop → 信頼できる検証済み成果。システムが走り・checkし・自己修正し、システムが feedback loop。ツールは同じ、mindset が完全に違う。</li>
+</ul>
+
+<p>loop は generation（コード・plan・PR・fix）をほぼ無料にし、<strong>scarce に残るのは judgment</strong>（どの plan が正しいか、どの line を止めるべきか、動くが根本から間違っている出力はどれか）。loop は builder の忠実な乗算記号であり、understanding を持ち込めば understanding を、laziness を持ち込めば laziness を増幅する。同じ loop を 2 人が建てると正反対の結果になり、差は loop ではなく checkpoint 1〜2 個にある。生成が無料に近づくほどエンジニアの価値は「見かけ妥当」と「実際に正しい」の隙間に集中する。増幅器ゆえに判断の失敗も増幅され、間違いに気づく「遅いギア」が失われる。</p>
+
+<p>運用規律: <strong>(1) 常に sample を読む</strong>（全部ではなく代表を毎日、各変更を自分で説明できるか確かめる）、<strong>(2) 出荷前に cap する</strong>（per-run/daily budget、max retry を初回無人稼働の前に）、<strong>(3) ドアを 1 つ開けておく</strong>（人間が pause できる checkpoint を構造として残す）。</p>
+
+<h2 id="mvlminimum-viable-loopと成長順序">MVL（Minimum Viable Loop）と成長順序</h2>
+
+<p>4 条件テストを通ったら、凝る前に<strong>最小の loop</strong>を建てる: <strong>1 automation・1 skill・1 state file・1 gate</strong>（この gate が「helps か spends か」を決める）。<strong>順序が重要</strong>: まず 1 回の manual run を確実にする → skill 化する → loop で包む → schedule する。飛ばすと本番で loop が壊れる。並行化は checks が実証された後、最後に足す。</p>
+
+<h2 id="同一-capability-の-2-toolchain">同一 capability の 2 toolchain</h2>
+
+<p>loop engineering は product ではなく capability の集合。Claude Code のコマンドで書かれていても Codex が同じ 6 organs を別名で提供する。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Capability</th>
+      <th>Claude Code</th>
+      <th>Codex</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Scheduling</td>
+      <td><code>/loop</code> worker</td>
+      <td>Automations tab</td>
+    </tr>
+    <tr>
+      <td>Run until met</td>
+      <td><code>/goal</code></td>
+      <td>automation rerun+judge</td>
+    </tr>
+    <tr>
+      <td>Parallel isolation</td>
+      <td><code>--worktree</code>（subagent の <code>isolation: worktree</code>）</td>
+      <td>background worktree</td>
+    </tr>
+    <tr>
+      <td>Sub-agents</td>
+      <td><code>.claude/agents/</code></td>
+      <td><code>.codex/agents/</code>（TOML）</td>
+    </tr>
+    <tr>
+      <td>External conn.</td>
+      <td>MCP + plugins</td>
+      <td>MCP connector</td>
+    </tr>
+    <tr>
+      <td>Explicit skill</td>
+      <td><code>SKILL.md</code></td>
+      <td><code>$skill-name</code></td>
+    </tr>
+    <tr>
+      <td>Machine-off run</td>
+      <td>Cloud Routines</td>
+      <td>cloud（planned）</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>問うべきは「どのブランドのコマンドか」ではなく「6 つ全部が揃っているか」。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a></li>
+  <li><a href="../pages/autocoder.html">AutoCoder</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/learning-with-ai-agents.html">AIエージェントと協働しながら学習する方法</a></li>
+          
+            <li><a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

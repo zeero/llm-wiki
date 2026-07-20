@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>edinetdb CLI — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>edinetdb CLI</h1>
+    <span class="cat-badge">Finance</span>
+    <div class="article"><h1 id="edinetdb-cli">edinetdb CLI</h1>
+
+<blockquote>
+  <p>有価証券報告書から抽出した日本の全上場企業 約4,000社の財務データを、コマンド1本で引ける Python パッケージ。EDINET DB サービスに CLI という入口を追加したもの。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p><code>pip install edinetdb</code> でインストールできる Python パッケージ／CLI。有報から抽出した日本の全上場企業（約4,000社）の財務データをコマンド1本で引ける。</p>
+
+<pre><code>pip install edinetdb
+edinetdb auth login
+edinetdb financials E02144 --years 5
+</code></pre>
+
+<p>EDINET DB（https://edinetdb.jp）は既に API Key 約7,000件・月間約100万リクエストで運用中のDBサービスで、そこに CLI を追加した形。既存の API Key はそのまま流用できる。ソースは https://github.com/Cabocia/edinetdb-cli 。</p>
+
+<h2 id="位置づけ3本柱の1つ">位置づけ（3本柱の1つ）</h2>
+
+<p>EDINET DB は有報データの構造化ベースに AI 分析・スクリーニング・大株主分析・不動産クロスDB連携を乗せたデータインフラ。従来 3 経路（Web UI、REST API、MCP Server）があり、CLI はその中間を埋める。</p>
+
+<ul>
+  <li>Jupyter/Python スクリプトから → <code>subprocess.check_output(["edinetdb", "financials", "..."])</code> で雑に呼べる</li>
+  <li>cron や GitHub Actions から → <code>edinetdb rankings roe --format csv &gt; daily.csv</code> 1行でOK</li>
+  <li>curl のヘッダ設定が面倒 → <code>edinetdb search toyota</code> で即結果</li>
+  <li>MCP 非対応の AI エージェント → Bash ツールで <code>edinetdb</code> を叩くだけで全機能利用可能</li>
+</ul>
+
+<p>MCP Server（AI エージェント向け）／REST API（アプリ向け）／CLI（ターミナル向け）の3本柱を揃えるのが狙い。</p>
+
+<h2 id="主なコマンド">主なコマンド</h2>
+
+<p>全27エンドポイント分のコマンドが揃う（<code>edinetdb --help</code>）。</p>
+
+<ul>
+  <li><code>edinetdb search toyota</code> — 企業検索（Rich テーブル表示）</li>
+  <li><code>edinetdb financials E02144 --years 5</code> — 財務時系列（revenue, operating_income, net_income, total_assets, eps …）</li>
+  <li><code>edinetdb rankings roe --limit 10</code> — ROE ランキング</li>
+  <li><code>edinetdb screener -w 'roe:gte=15' -w 'revenue_cagr_3y:gte=10'</code> — スクリーナー</li>
+  <li><code>edinetdb shareholders search "三菱UFJ信託"</code> — 大株主逆引き</li>
+  <li><code>edinetdb text-blocks E02144 --full</code> — 有報のテキストブロック（事業リスク等の全文）</li>
+  <li><code>edinetdb status</code> — データ鮮度確認（<code>status</code>, <code>search</code> は認証不要で即試せる）</li>
+</ul>
+
+<h2 id="設計判断">設計判断</h2>
+
+<ul>
+  <li><strong>Typer + httpx + rich の3点セット</strong>: 依存を最小化。Flask や SDK 自動生成は使わず薄く手書き。CLI の UX は Typer 標準で十分、HTTP は httpx で同期/非同期両対応、出力整形は rich が鉄板。</li>
+  <li><strong>認証</strong>: J-Quants CLI の OAuth デバイスフローと迷ったが、既に API Key が多数稼働している実情から既存の API Key paste 方式を採用。環境変数（<code>EDINETDB_API_KEY</code>）と named profile（複数 Key 使い分け）に対応。credentials は <code>~/.config/edinetdb/credentials</code> に <code>chmod 0600</code> で保管。</li>
+  <li><strong>出力形式</strong>: JSON / table（デフォルト、rich table）/ CSV を切替可能。</li>
+  <li><strong>エラー → exit code マッピング</strong>: シェルスクリプトでの扱いやすさ優先。0=成功、1=未分類、2=認証エラー(401/403)、3=レート制限(429)、4=Not Found(404)、5=パラメータ不正(400)、6=サーバーエラー(5xx)。</li>
+</ul>
+
+<h2 id="openapi-30-spec-同時公開">OpenAPI 3.0 spec 同時公開</h2>
+
+<p>CLI 公開に合わせ API ドキュメントを OpenAPI 3.0 準拠にリニューアル。openapi.yaml を Single Source of Truth とし、Flask 実装との突合を <code>scripts/verify_openapi.py</code> で CI チェック（ドリフトがあればデプロイを止める）。Redoc UI は openapi.json から自動描画、CLI は <code>x-codeSamples</code> 経由で右パネルにコマンド例を表示、他言語 SDK（TypeScript / Go / Rust）の生成も可能。</p>
+
+<h2 id="j-quants-cli-との比較">J-Quants CLI との比較</h2>
+
+<p>CLI 化の参考にした JPX の J-Quants CLI から、コマンド階層・複数出力形式を取り入れた。意図的に変えた点: 分野範囲（J-Quants は市場データ中心、edinetdb は有報の構造化で広い）、AI 活用前提（MCP Server を既に提供し CLI はシェル/パイプ派の補完）、認証 UX（edinetdb は既存 API Key 生態系を優先）。</p>
+
+<h2 id="v020-ロードマップ">v0.2.0 ロードマップ</h2>
+
+<p><code>--save &lt;PATH&gt;</code> の拡張子自動判別、<code>--fields</code> フィールド絞り込み、stdout pipe 時の自動 CSV 切替、<code>edinetdb schema &lt;endpoint&gt;</code>、シェル補完、Homebrew 配布、Parquet 出力。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/trading-strategy-scoring.html">デイトレ売買戦略のスコアリング設計</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <div class="none">まだありません（未接続の種）</div>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

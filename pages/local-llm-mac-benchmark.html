@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mac ローカルLLM 高速化ツール比較（mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio） — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Mac ローカルLLM 高速化ツール比較（mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio）</h1>
+    <span class="cat-badge">Topics</span>
+    <div class="article"><h1 id="mac-ローカルllm-高速化ツール比較mlx-lm--vllm-mlx--omlx--ollama--lm-studio">Mac ローカルLLM 高速化ツール比較（mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio）</h1>
+
+<blockquote>
+  <p>Apple Silicon Mac（MacBook Pro M3 Max 64GB）で、ローカルLLM推論ツールを同一モデル・同一プロンプトで実測比較した記事（zephel01, 2026年5月）の要約。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Qwen3.6-35B-A3B 4bit を用い、mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio を直列実行で3回平均計測。結論は <strong>「速度なら mlx-lm、API用途なら vllm-mlx、機能性なら oMLX、手軽さなら Ollama」</strong>。速度順位は mlx-lm &gt; vllm-mlx &gt; oMLX &gt; Ollama。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="各ツールの位置づけ">各ツールの位置づけ</h3>
+
+<ul>
+  <li><strong>mlx-lm</strong>: 純粋速度の王者。実測でチャット163 / 長文130 / コード91 tok/s と全プロンプトで最速。依存が少ないが起動オプションが多い。OpenAI互換サーバー（<code>mlx_lm.server</code>）を提供。</li>
+  <li><strong>vllm-mlx</strong>: API用途の本命（コミュニティ実装 waybarrios/vllm-mlx）。mlx-lm をバックエンドに使うため速度差はわずか5〜7%。<code>--continuous-batching</code> で複数同時セッション対応、OpenAI/Anthropic 両API互換で Claude Code / OpenCode に接続可能。なお vLLM 本体に <code>--backend mlx</code> オプションは存在しない。</li>
+  <li><strong>oMLX</strong>: マルチモデル同時ロード + tiered KV キャッシュ（RAM/SSD 2層）+ Continuous Batching + macOS メニューバーアプリ + Admin Dashboard を統合した Apple Silicon 専用サーバー。純速度は mlx-lm の65〜75%だが、運用面（1クリックでモデルロード/アンロード、永続SSDキャッシュ、GUI管理）が強み。<code>--model-dir</code> 配下のサブディレクトリを自動検出する設計。</li>
+  <li><strong>Ollama / LM Studio</strong>: 手軽さ・統合性が最強。GUI完結派向け。</li>
+</ul>
+
+<h3 id="本記事最大の発見-ollama-のmlx採用で爆速は条件付き">本記事最大の発見: Ollama の「MLX採用で爆速」は条件付き</h3>
+
+<p>Ollama 0.19+ の「MLXバックエンドで93%向上」という宣伝は、<code>OLLAMA_MLX=1</code> 設定 + 対応モデル使用が必要条件。実測では:</p>
+
+<ul>
+  <li><strong>Qwen3.5-9B</strong>: MLXが確実に効く（チャットで+65%等）。</li>
+  <li><strong>Qwen3.6-35B-A3B（大型MoE）</strong>: 効果限定的（最大+17%、コード生成では-11%）。</li>
+  <li>通常タグ（<code>qwen3.6:35b-a3b</code>）は GGUF Q4_K_M で、デフォルトは llama.cpp の Metal バックエンド動作。未対応モデルはエラーなく Metal に silent fallback するため、ユーザーは速度からしか判断できない。公式の93%向上は Qwen3.5 限定の数値。</li>
+</ul>
+
+<h3 id="実測から見える傾向">実測から見える傾向</h3>
+
+<ul>
+  <li>長文（rag_8k）ほど tok/s は約20%低下。コード生成（code_4k）は約半分に低下（プリフィルがボトルネック）。</li>
+  <li>DFlash（投機デコード）は公式ベンチで Qwen3.5-9B 4.37倍速等だが、Qwen3.6 MoE + chat 系プロンプトでは逆効果になることも。適用条件の確認が必要。</li>
+  <li>モデル配置: mlx-lm と vllm-mlx は HF キャッシュを共有。oMLX は <code>--model-dir</code> 配下にシンボリックリンク。Ollama は独自ストア（別途17〜24GB）。</li>
+</ul>
+
+<h3 id="m-シリーズ世代別の-mlx-特性">M シリーズ世代別の MLX 特性</h3>
+
+<p>Apple ML Research によれば、M5 の GPU Neural Accelerator が MLX 高速化の決定的要因。TTFT は compute-bound で M5 が3-4倍速、生成速度は memory-bandwidth-bound で約1.2倍。M3 Max はメモリ帯域400 GB/s と広く、大型モデル（生成が帯域律速）では意外と強い。本記事の結論「mlx-lm 最速 / Ollama 限定的」は M3/M4 Max での結果であり、M5 では評価が変わる可能性がある。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-with-ollama.html">Claude Code with Ollama（Anthropic API 互換）</a></li>
+  <li><a href="../pages/ollama-launch.html">ollama launch</a></li>
+  <li><a href="../pages/local-claude-code-with-lm-studio.html">LM Studio でローカル Claude Code</a></li>
+  <li><a href="../pages/openclaw-local-llm-setup.html">OpenClaw × ローカル LLM 構築ガイド</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/claude-code-with-ollama.html">Claude Code with Ollama（Anthropic API 互換）</a></li>
+          
+            <li><a href="../pages/framepack.html">FramePack</a></li>
+          
+            <li><a href="../pages/local-claude-code-with-lm-studio.html">LM Studio でローカル Claude Code</a></li>
+          
+            <li><a href="../pages/openclaw-local-llm-setup.html">OpenClaw × ローカル LLM 構築ガイド</a></li>
+          
+            <li><a href="../pages/rnj-1.html">Rnj-1</a></li>
+          
+            <li><a href="../pages/sulphur-2-local-video-ai.html">Sulphur 2（ローカル動画生成AI）</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

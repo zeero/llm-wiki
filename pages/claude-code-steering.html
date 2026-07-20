@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code の挙動制御（7つの方法） — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Claude Code の挙動制御（7つの方法）</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="claude-code-の挙動制御7つの方法">Claude Code の挙動制御（7つの方法）</h1>
+
+<blockquote>
+  <p>Claude Code で Claude の振る舞いを指示する7つの手段を、コンテキストコスト・compaction 挙動・権威（指示追従の強さ）の観点で使い分けるための整理。Anthropic 公式ブログ “Steering Claude Code” に基づく。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>各手段は「いつコンテキストへ読み込まれるか」「長いセッション（compaction）を通じて持続するか」「どれだけの権威を持つか」で異なる。7つの手段は CLAUDE.md、rules、skills、subagents、hooks、output styles、append-system-prompt。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="一覧">一覧</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>手段</th>
+      <th>読み込みタイミング</th>
+      <th>compaction</th>
+      <th>コンテキストコスト</th>
+      <th>主な用途</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CLAUDE.md（root）</td>
+      <td>セッション開始・全期間</td>
+      <td>memoize（一度読みキャッシュ、compaction 後に再読）</td>
+      <td>高（全行が常時トークン消費）</td>
+      <td>build コマンド、ディレクトリ構成、monorepo 構造、規約、チーム規範</td>
+    </tr>
+    <tr>
+      <td>CLAUDE.md（subdir）</td>
+      <td>そのサブディレクトリのファイルを読んだ時</td>
+      <td>そのディレクトリに触れるまで失われる</td>
+      <td>低</td>
+      <td>サブディレクトリ固有の規約</td>
+    </tr>
+    <tr>
+      <td>Rules</td>
+      <td>セッション開始（user-level）/ path-scoped は該当ファイル操作時</td>
+      <td>compaction 時に再注入</td>
+      <td>中（path-scoped でなければ常時）</td>
+      <td>特定の制約・規約（例: 全 API handler は Zod で入力検証）</td>
+    </tr>
+    <tr>
+      <td>Skills</td>
+      <td>name と description は開始時、body は invoke 時</td>
+      <td>invoke 済み skill を共有バジェットまで再注入、古い順に drop</td>
+      <td>低</td>
+      <td>手続き的ワークフロー（deploy / release チェックリスト）</td>
+    </tr>
+    <tr>
+      <td>Subagents</td>
+      <td>name・description・tool list は開始時、body は Agent tool 呼び出し時</td>
+      <td>最終メッセージ（要約+メタデータ）のみ返る</td>
+      <td>低（呼ぶまでメインは0コスト、独立コンテキストで実行）</td>
+      <td>並列作業や隔離すべき副作業（deep search、log 分析、依存監査）</td>
+    </tr>
+    <tr>
+      <td>Hooks</td>
+      <td>ライフサイクルイベントで発火</td>
+      <td>compaction を完全にバイパス</td>
+      <td>低（設定はメイン外、一部出力のみ返る）</td>
+      <td>決定論的自動化（linter 実行、Slack 通知、コマンドブロック、PreCompact バックアップ）</td>
+    </tr>
+    <tr>
+      <td>Output styles</td>
+      <td>セッション開始・system prompt へ注入</td>
+      <td>compaction されない</td>
+      <td>高（system prompt を上書き）</td>
+      <td>大きな役割変更（コード助手→汎用助手）</td>
+    </tr>
+    <tr>
+      <td>append-system-prompt</td>
+      <td>セッション開始・CLI フラグ</td>
+      <td>compaction されない・その invocation のみ</td>
+      <td>中（初回後は prompt cache）</td>
+      <td>トーン・応答長・書式の好み</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="各手段のポイント">各手段のポイント</h3>
+
+<ul>
+  <li><strong>CLAUDE.md</strong>: 200行以内・オーナーを置きコードのようにレビュー。索引として他ファイルを指す設計にする。共有リポでは肥大化しやすく、規約は path-scoped rules、手続きは skills へ逃がす。monorepo は各チームの subdirectory に CLAUDE.md を置き <code>claudeMdExcludes</code> で不要分を除外。組織全体の必須事項は MDM 配布の managed CLAUDE.md にする。</li>
+  <li><strong>Rules</strong>: <code>.claude/rules/</code> の markdown。<code>paths</code> frontmatter で path-scoped にすると無関係セッションで読まれない。unscoped rule は CLAUDE.md に書くのと機構的に同じ。</li>
+  <li><strong>Skills</strong>: <code>.claude/skills/</code> の SKILL.md（name/description/body）。手続き（deploy、release チェックリスト、review プロセス）に向く。</li>
+  <li><strong>Subagents</strong>: <code>.claude/agents/</code> の markdown。body は親会話に一切入らず、fresh コンテキストで実行し最終メッセージのみ返る。最大5階層ネスト可。中間結果でメイン会話を汚したくない副作業に使う。skill は手順をメインスレッドで見せ・操舵したい場合。</li>
+  <li><strong>Hooks</strong>: command / http / mcp_tool / prompt / agent の型がある。前3つは決定論的、後2つ（prompt / agent）は Claude の判断を使う。<code>PreToolUse</code> で exit code 2 によりツール呼び出しを拒否できる。</li>
+  <li><strong>Output styles</strong>: system prompt に座るため最も追従が強い。既定を上書きし、software engineering 助手としての既定指示（変更のスコープ、コメント方針、セキュリティ、テスト実行習慣）を落とすので慎重に。まず組み込みの Proactive / Explanatory / Learning を検討。</li>
+  <li><strong>append-system-prompt</strong>: 加算的で役割は変えない。指示が増えるほど追従は逓減する。</li>
+</ul>
+
+<h3 id="置き場所の指針">置き場所の指針</h3>
+
+<ul>
+  <li>「毎回 X したら必ず Y」→ hook（モデルの選択ではなく自動実行）。</li>
+  <li>「絶対にするな」→ 指示ではなく hooks / permissions / managed settings（決定論的な guardrail）。</li>
+  <li>30行の手続き→ skill。API 固有の rule→ <code>paths:</code> で scope。個人の好み→ user-level のローカルファイル。</li>
+</ul>
+
+<p>これらは skill / subagent / hook / output style を束ねて plugin として共有できる。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-usage-techniques.html">Claude Code 活用法（Anthropic 開発チーム）</a></li>
+  <li><a href="../pages/claude-code-extension-conflicts.html">Claude Code 拡張競合（Behavioral Drift）</a></li>
+  <li><a href="../pages/claude-code-metacognition.html">Claude Code への「省察」実装（メタ認知）</a></li>
+  <li><a href="../pages/japanese-tech-writing.html">japanese-tech-writing（SKILL）</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/claude-code-from-pr.html">Claude Code `--from-pr`（PRセッション再開）</a></li>
+          
+            <li><a href="../pages/claude-code-metacognition.html">Claude Code への「省察」実装（メタ認知）</a></li>
+          
+            <li><a href="../pages/claude-code-extension-conflicts.html">Claude Code 拡張競合（Behavioral Drift）</a></li>
+          
+            <li><a href="../pages/claude-code-usage-techniques.html">Claude Code 活用法（Anthropic 開発チーム）</a></li>
+          
+            <li><a href="../pages/claude-code-jitrl-memory.html">JitRL 式メモリ（Claude Code）</a></li>
+          
+            <li><a href="../pages/japanese-tech-writing.html">japanese-tech-writing（SKILL）</a></li>
+          
+            <li><a href="../pages/ollama-launch.html">ollama launch</a></li>
+          
+            <li><a href="../pages/long-running-agents.html">数時間動き続けるエージェントの構築</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

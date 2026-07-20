@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Agent Orchestration — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Multi-Agent Orchestration</h1>
+    <span class="cat-badge">Concepts</span>
+    <div class="article"><h1 id="multi-agent-orchestration">Multi-Agent Orchestration</h1>
+
+<blockquote>
+  <p>複数の専門特化した AI エージェントを協調動作させ、分業と統合で1つの成果物を作るアーキテクチャ。2026 年の AI 開発は単体エージェントからこのマルチエージェント・オーケストレーションへシフトした。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Multi-Agent Orchestration は、1体の AI に全タスクを任せるのではなく、アーキテクト・コーダー・レビュアー・テスター・PM といった役割ごとに専門特化した AI エージェントを編成し、人間のチームと同じように分業・連携させて問題を解くアプローチである。</p>
+
+<p>出典記事は 2026 年のトレンドとして、コパイロット支出の 86%（72億ドル）がエージェントベースシステムに投入され、新規 AI プロジェクトの 70% 以上がオーケストレーションフレームワークを採用したと述べている。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="主要フレームワーク">主要フレームワーク</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>フレームワーク</th>
+      <th>開発元</th>
+      <th>特徴</th>
+      <th>向いてる用途</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>OpenAI Agents SDK</td>
+      <td>OpenAI</td>
+      <td>Swarm の後継、MCP ネイティブ対応、セッションによる永続メモリ、Human-in-the-loop、ビルトイントレーシング</td>
+      <td>本番システム</td>
+    </tr>
+    <tr>
+      <td>LangGraph</td>
+      <td>LangChain</td>
+      <td>有向グラフでワークフローを定義、最低レイテンシ、条件分岐・並列処理に強い</td>
+      <td>複雑なワークフロー</td>
+    </tr>
+    <tr>
+      <td>CrewAI</td>
+      <td>crewAI Inc</td>
+      <td>人間のチーム構造を模倣したロールベース設計、タスク依存関係の自動解決、Production-ready</td>
+      <td>チーム型タスク</td>
+    </tr>
+    <tr>
+      <td>AutoGen</td>
+      <td>Microsoft</td>
+      <td>会話駆動型（GroupChat）、動的なロール適応、Human-in-the-loop</td>
+      <td>研究・プロトタイピング</td>
+    </tr>
+    <tr>
+      <td>Swarms.ai</td>
+      <td>kyegomez</td>
+      <td>エンタープライズ向け、階層型、スケーラブル</td>
+      <td>大規模本番</td>
+    </tr>
+    <tr>
+      <td>claude-flow</td>
+      <td>ruvnet</td>
+      <td>Claude Code 特化、60 以上の専門エージェント、MCP 完全対応、自己学習・自己修復、分散コンセンサス</td>
+      <td>Claude Code ユーザー</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="プロトコルスタック">プロトコルスタック</h3>
+
+<p>2026 年はエージェント間通信の標準化が進み、3層のスタックとして整理される。</p>
+
+<ul>
+  <li><strong>A2A（Agent-to-Agent Protocol）</strong>: エージェント間協調の横方向の標準。Google が提唱し Linux Foundation が管理。</li>
+  <li><strong>MCP（Model Context Protocol）</strong>: ツール連携の縦方向の標準。Anthropic が提唱し業界標準化。</li>
+  <li><strong>AG-UI（Agent UI）</strong>: UI 統合の層。</li>
+</ul>
+
+<p>ベストプラクティスは、MCP（縦方向：ツール連携）と A2A（横方向：エージェント協調）を組み合わせて使うこと。</p>
+
+<h3 id="オーケストレーションパターン">オーケストレーション・パターン</h3>
+
+<ul>
+  <li><strong>階層型（Hierarchical）</strong>: PM が配下のエージェントを指揮。明確な指揮系統が必要な場合に有効で、責任が明確でデバッグしやすい。</li>
+  <li><strong>メッシュ型（Mesh）</strong>: エージェントがピアツーピアで相互接続。耐障害性が高くスケーラブル。</li>
+  <li><strong>パイプライン型（Sequential）</strong>: Input → Agent 1 → Agent 2 → Output と順に処理。シンプルで予測可能。</li>
+  <li><strong>動的型（Adaptive）</strong>: Coordinator が状況に応じて最適なエージェントを選択。変化する複雑な要件に柔軟に対応し自己最適化する。</li>
+</ul>
+
+<h3 id="用途別の選択指針">用途別の選択指針</h3>
+
+<ul>
+  <li>シンプルなタスク委譲 → OpenAI Agents SDK</li>
+  <li>条件分岐の多い複雑なワークフロー → LangGraph</li>
+  <li>チーム型プロジェクト → CrewAI</li>
+  <li>研究・プロトタイピング → AutoGen</li>
+  <li>Claude Code ユーザー → claude-flow</li>
+  <li>エンタープライズ大規模 → Swarms.ai</li>
+</ul>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/model-context-protocol.html">MCP</a></li>
+  <li><a href="../pages/claude-code.html">Claude Code</a></li>
+  <li><a href="../pages/loop-engineering.html">Loop Engineering</a></li>
+  <li><a href="../pages/autocoder.html">AutoCoder</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/claude-code.html">Claude Code</a></li>
+          
+            <li><a href="../pages/dify.html">Dify</a></li>
+          
+            <li><a href="../pages/llm-memory-architecture.html">LLM Memory Architecture</a></li>
+          
+            <li><a href="../pages/loop-engineering.html">Loop Engineering</a></li>
+          
+            <li><a href="../pages/swift-concurrency-main-actor.html">Swift Concurrency: MainActor 上かの判定</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

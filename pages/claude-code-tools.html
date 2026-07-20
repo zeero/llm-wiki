@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code 強化ツール集 — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Claude Code 強化ツール集</h1>
+    <span class="cat-badge">Methods</span>
+    <div class="article"><h1 id="claude-code-強化ツール集">Claude Code 強化ツール集</h1>
+
+<blockquote>
+  <p>Claude Code を中心とした開発を高速化・安定化するための周辺 CLI・プラグイン・拡張ツールを、用途別に整理したまとめ。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Claude Code などの AI エージェントはコード生成そのものは高速だが、Git 操作・リポジトリ移動・パッケージ管理・レビュー返信といった周辺作業や、フォーマット揺れに惑わされる編集・危険なシェルコマンドの生成などがボトルネックになる。ここでは 3 つの記事で紹介された「Claude Code を底上げするツール」を横断的にまとめる。ツールは大きく (1) エージェント自身がパス上から呼んで使う CLI、(2) 人間のレビュー・運用を助けるツール、(3) Claude Code の設定・セッション・GUI・並列化を支えるエコシステム、に分類できる。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="構造で扱うcli-スタックエージェントが自分で呼ぶ">「構造で扱う」CLI スタック（エージェントが自分で呼ぶ）</h3>
+
+<p>Bozhidar Batsov の記事「Supercharging Claude Code with the Right (CLI) Tools」で紹介された 10 本を、teppyama が Claude Code 視点で解説したもの。鍵は「コードを単語の並び（正規表現）ではなく構文の構造として扱う」発想。ツールを CLAUDE.md に明記して指示するのではなく、パス上に置いておくだけで Claude が自分で気づいて使い始める運用が推奨されている（CLAUDE.md の容量とコンテキストを節約できる）。</p>
+
+<ul>
+  <li><strong>高優先（構造で扱う中核）</strong>
+    <ul>
+      <li><strong>ast-grep</strong>: 構文パターンでコードを検索・書き換え。<code>$PROP &amp;&amp; $PROP()</code> → <code>$PROP?.()</code> のように、同じメタ変数を 2 回書けば「同じ識別子の繰り返し」を構造的に縛れる。コメント・文字列リテラルの誤マッチを避けられる（tree-sitter ベース、Rust 製）。</li>
+      <li><strong>difftastic</strong>: 行指向ではなく構文構造で diff を取る。インデント・改行だけの整形変更を色で抑え、本筋の変更だけをレビューに残す。AI 生成差分のレビューを読みやすくする（30 以上の言語対応、Rust 製）。</li>
+      <li><strong>shellcheck</strong>: AI が大量生成するシェルの危険（未定義変数を踏む <code>rm -rf $UNSET/</code> 等）を実行前に静的検出。AI と実行の間に「動かす前のフィルタ」を 1 段はさむ（Haskell 製）。</li>
+    </ul>
+  </li>
+  <li><strong>中優先</strong>
+    <ul>
+      <li><strong>sd</strong>: モダンな置換ツール。<code>sed</code> の正規表現エスケープ地獄を回避。</li>
+      <li><strong>scc</strong>: コード行数・構成を高速把握。プロジェクトの規模感を Claude に伝える。</li>
+      <li><strong>yq</strong>: YAML/JSON/TOML/XML の AST ベースクエリ。コメント・順序を保持したまま設定を書き換えられ、再生成による事故を防ぐ。</li>
+      <li><strong>comby</strong>: 言語非依存の構造化置換（ast-grep より単純なパターン向き）。</li>
+    </ul>
+  </li>
+  <li><strong>補助</strong>
+    <ul>
+      <li><strong>hyperfine</strong>: コマンド実行のベンチマーク。</li>
+      <li><strong>watchexec</strong>: ファイル変更で自動コマンド実行（テスト駆動を組ませやすい）。</li>
+      <li><strong>delta（git-delta）</strong>: git diff のシンタックスハイライト。</li>
+    </ul>
+  </li>
+</ul>
+
+<p>一括導入コマンド: <code>brew install ast-grep difftastic shellcheck sd scc yq comby hyperfine watchexec git-delta</code>。まず全部入れて 1〜2 週間眺め、Claude が選んで使うものを見てから削るのが負荷の少ない手順とされる。</p>
+
+<h3 id="周辺ワークフローツール人間の手数を減らす">周辺ワークフローツール（人間の手数を減らす）</h3>
+
+<p>Findy Media の記事（Ubie 鹿野氏）で紹介された、開発フロー全体の速度を落とさないためのツール群。</p>
+
+<ul>
+  <li><strong>Tool Search Tool</strong>: MCP ツールを遅延読み込み（loaded on demand）し、セッション開始時のコンテキスト消費をゼロにする。<code>~/.claude/settings.json</code> の <code>env</code> で <code>ENABLE_TOOL_SEARCH: "true"</code>。ツール選択精度も向上。</li>
+  <li><strong>Claude-Mem</strong>: セッション間でコンテキストを自動保存・復元するプラグイン。作業を AI で圧縮し次セッションに関連コンテキストを注入。過去セッションは <code>localhost:37777</code> で閲覧可能。</li>
+  <li><strong>ccresume</strong>: 過去セッションをインタラクティブに閲覧・再開する CUI ツール（標準の <code>claude --resume</code> より使いやすい）。</li>
+  <li><strong>PR コメント自動返信</strong>: <code>gh api repos/{owner}/{repo}/pulls/{pr}/comments -X POST -f body="..." -F in_reply_to={comment_id}</code> を覚えさせ、CodeRabbit/Copilot 等のレビューにスレッド形式で返信させる。</li>
+  <li><strong>ni</strong>: ロックファイルを検出して npm/yarn/pnpm/bun/deno を自動判定（<code>ni</code>, <code>ni pkg -D</code>, <code>nr dev</code>）。</li>
+  <li><strong>ghq + peco</strong>: <code>ghq</code> でリポジトリを <code>~/git/github.com/{owner}/{repo}</code> 構造で管理し、<code>peco</code> で絞り込んで一発移動（<code>g</code> エイリアス）。</li>
+  <li><strong>Raycast</strong>: ランチャー。ショートカットでアプリ起動やシェルスクリプト実行（複数エージェントの並列起動用スクリプト等）。</li>
+</ul>
+
+<h3 id="claude-code-エコシステム設定可視化gui並列化">Claude Code エコシステム（設定・可視化・GUI・並列化）</h3>
+
+<p>Qiita のまとめ記事（flowernotfound）で紹介された、成熟した Claude Code コミュニティ発のツール群。</p>
+
+<ul>
+  <li><strong>コスト・ログ可視化</strong>: ccusage（コスト・使用状況可視化、statusline 対応）、Claude Code Log（会話ログ閲覧、TUI/ブラウザ）、Sniffly（利用ログ分析ダッシュボード）。</li>
+  <li><strong>設定・ステータスライン</strong>: ccexp（設定ファイル管理）、ccstatusline / Claude Powerline（カスタムステータスライン）、Claude Code Templates / Cookbook / My Claude Code Project’s Starter Settings（設定テンプレート）、Claude Code Development Kit（開発環境セットアップ）。</li>
+  <li><strong>拡張フレームワーク・ワークフロー</strong>: SuperClaude Framework（全部入り拡張）、CCPlugins（定型タスクのカスタムコマンド集）、ccpm（GitHub 統合の仕様駆動開発）、Claude Code Spec Workflow（Kiro 統合の spec 開発）、Claude Code Workflows、Claude-Flow（オーケストレーション）、TDD Guard（TDD 強制）。</li>
+  <li><strong>GUI / エディタ統合</strong>: opcode（旧 Claudia、デスクトップ GUI）、Claude Code Viewer / UI / Web UI / Chat（ブラウザ・VSCode・モバイル）、claudecode.nvim（Neovim）、Claude Code IDE for Emacs、cui（音声入力対応 GUI）、happy。</li>
+  <li><strong>モデル・検索・並列</strong>: Claude Code Router（他モデル・ローカルモデル利用）、Claude Context（セマンティック検索 MCP、serena 的）、Claude Squad（エージェント並列化）、n8n-MCP（n8n 統合）。</li>
+  <li><strong>サブエージェント・レビュー</strong>: Claude Code Subagents Collection / Awesome Claude Code Subagents（テンプレート集）、Claude Code Security Reviewer（セキュリティ脆弱性レビュー）、awesome-claude-code（情報集約リポジトリ）。</li>
+</ul>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/claude-code-best-practices.html">claude-code-best-practice リポジトリ</a></li>
+  <li><a href="../pages/claude-code-settings.html">Claude Code の権限・設定管理</a></li>
+  <li><a href="../pages/codex-cli-settings.html">Codex CLI の機能・設定</a></li>
+  <li><a href="../pages/tool-search-tool.html">Tool Search Tool</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/autocoder.html">AutoCoder</a></li>
+          
+            <li><a href="../pages/ccplugins.html">CCPlugins</a></li>
+          
+            <li><a href="../pages/claude-code.html">Claude Code</a></li>
+          
+            <li><a href="../pages/claude-code-blog-automation.html">Claude Code でのブログ記事執筆自動化</a></li>
+          
+            <li><a href="../pages/claude-code-settings.html">Claude Code の権限・設定管理</a></li>
+          
+            <li><a href="../pages/claude-fable-5-guide.html">Claude Fable 5 公式ガイドと使い分けの作法</a></li>
+          
+            <li><a href="../pages/codex-cli-settings.html">Codex CLI の機能・設定</a></li>
+          
+            <li><a href="../pages/local-claude-code-with-lm-studio.html">LM Studio でローカル Claude Code</a></li>
+          
+            <li><a href="../pages/tool-search-tool.html">Tool Search Tool</a></li>
+          
+            <li><a href="../pages/claude-code-best-practices.html">claude-code-best-practice リポジトリ</a></li>
+          
+            <li><a href="../pages/pxpipe-token-image-compression.html">pxpipe（プロンプト画像化によるトークン圧縮）</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swift Concurrency: MainActor 上かの判定 — zeero / wiki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a class="brand" href="../index.html"><span class="dot"></span>zeero / wiki</a>
+    <div class="nav-links">
+      <a href="../index.html#categories">Categories</a>
+      <a href="../pages/index.html">All pages</a>
+      <a href="https://github.com/zeero" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+</div>
+<div class="wrap">
+  <article class="page">
+    <a class="back" href="../index.html">← dashboard</a>
+    <h1>Swift Concurrency: MainActor 上かの判定</h1>
+    <span class="cat-badge">Concepts</span>
+    <div class="article"><h1 id="swift-concurrency-mainactor-上かの判定">Swift Concurrency: MainActor 上かの判定</h1>
+
+<blockquote>
+  <p>Swift 6 の非同期コードで「メインスレッドか」ではなく「どの actor 上か」を問い、<code>MainActor.assertIsolated()</code> などで MainActor 実行を検証する方法。</p>
+</blockquote>
+
+<h2 id="概要">概要</h2>
+
+<p>Swift 6 では、async コンテキストから <code>Thread.isMainThread</code> を参照するとコンパイルエラーになる:</p>
+
+<pre><code>'Thread.isMainThread' is unavailable from asynchronous contexts
+Work intended for the main actor should be marked with @MainActor;
+this is an error in the Swift 6 language mode.
+</code></pre>
+
+<p>Swift Concurrency では「どのスレッドか」は実装詳細であり、正しい問いは「どの actor 上か」である。UI 更新は <code>MainActor</code> 上で行う必要があり、重い処理は <code>MainActor</code> の外で走らせる。データ安全性を守るのはスレッドではなく actor isolation であり、actor が直列実行とデータ保護を担う。</p>
+
+<h2 id="詳細">詳細</h2>
+
+<h3 id="なぜ-threadismainthread-が使えないか">なぜ <code>Thread.isMainThread</code> が使えないか</h3>
+
+<p>スレッドは Swift Concurrency ランタイムが管理する実装詳細で、タスクは実行途中でスレッドをまたいで再開しうる。そのため「今どのスレッドか」を問うこと自体が意味を失い、Swift 6 言語モードでは async コンテキストからの <code>Thread.isMainThread</code> 参照をエラーにしている。判定すべきは actor isolation である。</p>
+
+<h3 id="mainactorassertisolated-で検証する"><code>MainActor.assertIsolated()</code> で検証する</h3>
+
+<p>開発中に「今 MainActor 上か」を表明する:</p>
+
+<pre><code class="language-swift">func updateUI() {
+    MainActor.assertIsolated("UI updates must happen on MainActor!")
+    self.title = "Loaded"
+}
+</code></pre>
+
+<ul>
+  <li><strong>Debug ビルド</strong>（Xcode 既定）: MainActor 上でなければ即座にクラッシュする</li>
+  <li><strong>Release ビルド</strong>: 何もしない（ゼロコスト）</li>
+</ul>
+
+<p>誤った actor から呼び出された瞬間に開発中に停止するため、問題を早期に発見できる。</p>
+
+<h3 id="全ビルドで停止させたい場合-preconditionisolated">全ビルドで停止させたい場合: <code>preconditionIsolated</code></h3>
+
+<pre><code class="language-swift">MainActor.preconditionIsolated("UI must be touched on MainActor")
+</code></pre>
+
+<p>こちらは <strong>Debug / Release 両方</strong>でクラッシュする。誤った actor からの呼び出しが本番でロジックエラーとなる場合に使う。</p>
+
+<h3 id="クラッシュ時の見え方queue-名が-runtime-hint">クラッシュ時の見え方（Queue 名が runtime hint）</h3>
+
+<p>アサーション失敗時はアプリが trap する。Xcode の debugger navigator で Queue 名を見ると、現在の actor コンテキストが読み取れる:</p>
+
+<ul>
+  <li>MainActor <strong>でない</strong>場合: <code>com.apple.root.user-initiated-qos.cooperative (concurrent)</code> のような concurrent queue 名。バックグラウンド actor（例では <code>.userInitiated</code> QoS）上で走っており、UI actor の外にいることを示す</li>
+  <li>MainActor <strong>上</strong>の場合: <code>com.apple.main-thread (serial)</code></li>
+</ul>
+
+<p>Queue 名はあくまで runtime のヒントであり、actor コンテキストを推測する手がかりになる。</p>
+
+<h3 id="カスタム-global-actor-でも同じ手法が使える">カスタム global actor でも同じ手法が使える</h3>
+
+<p>自作の actor に対しても <code>assertIsolated</code> / <code>preconditionIsolated</code> が使える:</p>
+
+<pre><code class="language-swift">@globalActor
+actor ImageCacheActor {
+    static let shared = ImageCacheActor()
+}
+
+@ImageCacheActor
+func mutateCache() {
+    ImageCacheActor.assertIsolated("must be on ImageCacheActor")
+    // safe to touch cache here
+}
+</code></pre>
+
+<p><code>MainActor.assertIsolated</code> と全く同じように機能する。</p>
+
+<h3 id="assertnotmainactor-は存在しない"><code>assertNotMainActor</code> は存在しない</h3>
+
+<p>「MainActor 上でないこと」を直接表明する API はない。回避策として一時的に <code>MainActor.assertIsolated("should NOT be main")</code> を差し込み、クラッシュしなければ MainActor 上だと分かる。あるいは breakpoint を張って debug navigator で Task の値を読む。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Swift 6 は適切な actor 利用を強制する。<code>Thread.isMainThread</code> を忘れ、「期待した actor 上にいるか？」を問う。開発中は <code>assertIsolated</code> でミスを早期に捕捉し、Xcode の <strong>Queue</strong> 情報で runtime の actor コンテキストを把握し、カスタムログで actor hop の発生箇所を可視化する。</p>
+
+<h2 id="関連">関連</h2>
+
+<ul>
+  <li><a href="../pages/swiftui-agent-skill.html">SwiftUI Agent Skill</a></li>
+  <li><a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a></li>
+</ul>
+
+</div>
+
+    <div class="backlinks">
+      <h2>このページを参照しているページ</h2>
+      
+        <ul>
+          
+            <li><a href="../pages/swiftui-agent-skill.html">SwiftUI Agent Skill</a></li>
+          
+        </ul>
+      
+    </div>
+  </article>
+</div>
+
+<script defer src="../assets/search.js"></script>
+<footer>
+  <div class="wrap">
+    <div class="frow">
+      <div>zeero / llm-wiki — <a href="https://zeero.github.io/llm-wiki/">zeero.github.io/llm-wiki</a></div>
+      <div>Generated by <code>rake dashboard</code> · published via <code>rake publish</code></div>
+    </div>
+    <div class="built">Obsidian Vault (private) → 生成 HTML のみ公開 · dark only · emerald は唯一の色事件</div>
+  </div>
+</footer>
+</body>
+</html>
