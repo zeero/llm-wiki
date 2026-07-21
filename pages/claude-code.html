@@ -54,6 +54,12 @@
 
 <p>Claude Code はマルチエージェント基盤の中核としても扱われ、<a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a> で紹介される claude-flow のように「Claude Code 特化」で多数の専門エージェントを編成するフレームワークも登場している。周辺ツールやベストプラクティスは <a href="../pages/claude-code-tools.html">Claude Code 強化ツール集</a>・<a href="../pages/claude-code-best-practices.html">claude-code-best-practice リポジトリ</a> に整理されている。</p>
 
+<h3 id="中級者ガイドの実践フロー">中級者ガイドの実践フロー</h3>
+
+<p>中級者向けガイドは、まず <code>npm install -g @anthropic-ai/claude-code</code> で導入し、プロジェクトの目的・技術・構成・主要な入口などを Claude Code に調査させて <code>CLAUDE.md</code> に記録する流れを紹介している。プロジェクト固有の前提を常時コンテキストとして残すことで、同じ説明を繰り返さずに済む。</p>
+
+<p>作業は <strong>Explore → Plan → Code → Commit</strong> の段階に分け、いきなり実装へ進めない。TDD では、先に失敗するテストを用意してから実装し、設定やワークフローを調整する。これは Claude Code の機能一覧ではなく、調査結果を文書化し、計画・実装・検証を分離するための運用例として読むべき内容である。</p>
+
 <h2 id="関連">関連</h2>
 
 <ul>
@@ -69,6 +75,8 @@
       <h2>このページを参照しているページ</h2>
       
         <ul>
+          
+            <li><a href="../pages/ai-coding-workflows.html">AI コーディングのワークフロー</a></li>
           
             <li><a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a></li>
           

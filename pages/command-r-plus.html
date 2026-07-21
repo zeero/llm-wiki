@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FramePack — zeero / wiki</title>
+<title>Command R+ — zeero / wiki</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap" rel="stylesheet">
@@ -23,28 +23,29 @@
 <div class="wrap">
   <article class="page">
     <a class="back" href="../index.html">← dashboard</a>
-    <h1>FramePack</h1>
+    <h1>Command R+</h1>
     <span class="cat-badge">Entities</span>
-    <div class="article"><h1 id="framepack">FramePack</h1>
+    <div class="article"><h1 id="command-r">Command R+</h1>
 
 <blockquote>
-  <p>ローカル環境で動作する動画生成 AI。開発者「イリヤスフィール氏」（lllyasviel）が公開し、界隈で話題となった。</p>
+  <p>Cohere の多言語対応大規模言語モデル。日本語応答、長いコンテキスト、RAG、Tool Use、ローカル実行の紹介。</p>
 </blockquote>
 
 <h2 id="概要">概要</h2>
 
-<p><strong>FramePack</strong> は、ローカル環境で動かせる動画生成 AI。ControlNet などで知られる開発者「イリヤスフィール氏」（GitHub の lllyasviel を指す）が公開し、2025 年 4 月ごろ AI 界隈で大きな話題になった。</p>
+<p>2024年のクリップでは、Command R+ を GPT-4 と同等の性能を持つモデルとして紹介している。記事中の仕様は 1,040億パラメーター、12万8,000トークンのコンテキストウィンドウで、日本語を含む多言語処理に対応するというものだった。</p>
 
-<h2 id="詳細">詳細</h2>
+<h2 id="特徴と実行方法">特徴と実行方法</h2>
 
-<p>既存の短いクリップは、ASCII.jp の記事（<code>https://ascii.jp/elem/000/004/264/4264369/</code>）を紹介し、技術的詳細はリンク先や公式リポジトリの参照が必要だとしていた。</p>
+<p>記事の比較では、Multilingual と RAG で Mistral Large を上回り、Tool Use で GPT-4 Turbo を超える結果が紹介されている。また、Hugging Face の <code>CohereForAI/c4ai-command-r-plus</code> から取得でき、Web 上のチャットデモも案内されている。</p>
 
-<p>追加の ASCII.jp クリップでは、FramePack が Tencent の HunyuanVideo を基盤にし、「次フレーム詰め込み圧縮」ネットワークによって生成中のメモリー消費を抑える仕組みとして説明されている。記事は、6GB の VRAM を持つ NVIDIA GPU でも動作し、30fps の1分動画を生成できるという特徴を紹介しているが、これは記事時点の報道内容であり、現在の対応環境や性能を保証する記録ではない。</p>
+<p>これらは 2024年時点の紹介・比較であり、現在のモデル提供状況やベンチマークを表すものではない。ローカル実行時はモデルサイズ、量子化、利用可能なメモリ、ライセンスを別途確認する必要がある。</p>
 
 <h2 id="関連">関連</h2>
 
 <ul>
-  <li><a href="../pages/sulphur-2-local-video-ai.html">Sulphur 2（ローカル動画生成AI）</a></li>
+  <li><a href="../pages/transformer.html">Transformer</a></li>
+  <li><a href="../pages/rag-explained.html">RAG（Retrieval-Augmented Generation）</a></li>
   <li><a href="../pages/local-llm-mac-benchmark.html">Mac ローカルLLM 高速化ツール比較（mlx-lm / vllm-mlx / oMLX / Ollama / LM Studio）</a></li>
 </ul>
 
@@ -55,7 +56,7 @@
       
         <ul>
           
-            <li><a href="../pages/sulphur-2-local-video-ai.html">Sulphur 2（ローカル動画生成AI）</a></li>
+            <li><a href="../pages/chatgpt.html">ChatGPT</a></li>
           
         </ul>
       
