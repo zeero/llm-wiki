@@ -51,6 +51,12 @@
 
 <p>自動化では、Issue 本文をそのまま実行権限へ渡さないこと、API キーを Secrets で管理すること、Actions の <code>permissions</code> を必要最小限にすることが重要である。<code>full-auto</code> は便利だが、変更対象・Git 操作・テスト・PR の範囲をワークフローとプロンプトで明示し、レビューを省略しない。</p>
 
+<h2 id="agent-mode-の実験から得られる境界">Agent mode の実験から得られる境界</h2>
+
+<p>GitHub Copilot Edits の Agent mode は、指定したファイルの生成・修正に加えて、コンソールでコマンドを実行し、その結果を解釈して作業を継続する機能として紹介されている。テスト実行やファイル削除など実際に変更を伴う操作では確認が必要であり、エージェントの自動性と人間の承認を分ける境界になる。</p>
+
+<p>紹介記事は 2025 年時点の VS Code Insiders とモデル構成を前提にしており、Rate limit や Preview の扱いは変わり得る。また、当時の Agent mode ではプロジェクト共通のコンテキストを事前設定できず、対象ファイルや指示を都度渡す必要があると報告されている。機能名や仕様を現在の製品仕様として固定せず、実験時点の観察として記録する。</p>
+
 <h2 id="関連">関連</h2>
 
 <ul>
@@ -70,6 +76,8 @@
             <li><a href="../pages/autogpt.html">AutoGPT</a></li>
           
             <li><a href="../pages/chatgpt.html">ChatGPT</a></li>
+          
+            <li><a href="../pages/cursor-project-rules.html">Cursor の Project Rules</a></li>
           
         </ul>
       

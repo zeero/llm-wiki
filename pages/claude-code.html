@@ -60,6 +60,12 @@
 
 <p>作業は <strong>Explore → Plan → Code → Commit</strong> の段階に分け、いきなり実装へ進めない。TDD では、先に失敗するテストを用意してから実装し、設定やワークフローを調整する。これは Claude Code の機能一覧ではなく、調査結果を文書化し、計画・実装・検証を分離するための運用例として読むべき内容である。</p>
 
+<h3 id="実用サービスの試作からデプロイまで">実用サービスの試作からデプロイまで</h3>
+
+<p>別の実践例では、まず CLI を <code>npm install -g @anthropic-ai/claude-code</code> で導入し、作りたい Web サービスの目的・機能・データベース要否などを伝えて <code>CLAUDE.md</code> を生成させる。<code>CLAUDE.md</code> をプロジェクトルートに置くことで、起動時にプロジェクトの文脈を読み込ませ、最初の雛形実装から機能追加、データベースのセットアップ、デプロイまで段階的に依頼している。</p>
+
+<p>この事例は、AI に丸ごと任せれば完成するという保証ではなく、要件を文書化し、実装結果を確認しながら小さく依頼を重ねることで、個人向けの実用アプリにも適用できるという運用上の示唆として扱う。</p>
+
 <h2 id="関連">関連</h2>
 
 <ul>
@@ -77,6 +83,8 @@
         <ul>
           
             <li><a href="../pages/ai-coding-workflows.html">AI コーディングのワークフロー</a></li>
+          
+            <li><a href="../pages/cursor-project-rules.html">Cursor の Project Rules</a></li>
           
             <li><a href="../pages/multi-agent-orchestration.html">Multi-Agent Orchestration</a></li>
           
